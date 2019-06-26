@@ -1,0 +1,8 @@
+{
+  "require": {
+    "payjp/payjp-php": "~1.0"
+  },
+  "autoload": {
+    "psr-4": { "Payjp\\" : "lib/" }
+  }
+}
