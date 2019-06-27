@@ -1,10 +1,10 @@
 <?php 
 
-class PayjpCustomersController extends PointAppController {
+class PayjpCustomersController extends PayjpAppController {
   
   public $name = 'PayjpCustomers';
 
-  public $uses = array('Plugin', 'Point.PointUser', 'Point.PointBook', 'Members.Mypage');
+  public $uses = array('Plugin', 'Payjp.PayjpCustomer', 'Payjp.PayjpCharge', 'Members.Mypage');
   
   public $helpers = array('BcPage', 'BcHtml', 'BcTime', 'BcForm');
   
@@ -24,24 +24,22 @@ class PayjpCustomersController extends PointAppController {
     //$this->BcAuth->allow('');
   }
 
-  //管理画面用のデフォルトアクション
-  public function admin_index() {
-    $this->pageTitle = 'PointBook';
-    $conditions = [];
-    if ($this->request->is('post')){
-      $data = $this->request->data;
-      if($data['PointBook']['mypage_id']) $conditions[] = array('PointBook.mypage_id' => $data['PointBook']['mypage_id']);
-      if($data['PointBook']['reason']) $conditions[] = array('PointBook.reason' => $data['PointBook']['reason']);
-    }
-    $this->paginate = array('conditions' => $conditions,
-      'order' => 'PointBook.id DESC',
-      'limit' => 50
-    );
-    $PointBooks = $this->paginate('PointBook');
-    $this->set('PointBooks', $PointBooks);
-  }
-  
-  
+	public function admin_index() {
+		$this->pageTitle = 'カスタマー（登録カード一覧）';
+		$conditions = [];
+		if ($this->request->is('post')){
+			$data = $this->request->data;
+			if($data['PayjpCustomer']['mypage_id']) $conditions[] = array('PayjpCustomer.mypage_id' => $data['PayjpCustomer']['mypage_id']);
+			if($data['Mypage']['name']) $conditions[] = array('Mypage.name like' => '%'.$data['Mypage']['name'].'%');
+		}
+		$this->paginate = array('conditions' => $conditions,
+		'order' => 'PayjpCustomer.modified DESC',
+		'limit' => 50
+		);
+		$this->PayjpCustomer->unbindModel(['hasMany' => ['PayjpCharge']]);
+		$PayjpCustomer = $this->paginate('PayjpCustomer');
+		$this->set('PayjpCustomer', $PayjpCustomer);
+	}
 
 
 

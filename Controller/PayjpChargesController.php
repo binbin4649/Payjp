@@ -25,23 +25,23 @@ class PayjpChargesController extends PayjpAppController {
     $this->Security->unlockedActions = array('payment');
   }
 
-  //ポイントユーザー一覧。ユーザーを検索してポイント調整できる
-  public function admin_index() {
-	$this->pageTitle = '会員一覧(point)';
-	$conditions = [];
-	if ($this->request->is('post')){
-      $data = $this->request->data;
-      if($data['PointUser']['mypage_id']) $conditions[] = array('PointUser.mypage_id' => $data['PointUser']['mypage_id']);
-      if($data['Mypage']['name']) $conditions[] = array('Mypage.name like' => '%'.$data['Mypage']['name'].'%');
-    }
-    $this->paginate = array('conditions' => $conditions,
-      'order' => 'PointUser.id ASC',
-      'limit' => 50
-    );
-    $this->PointUser->unbindModel(['hasMany' => ['PointBook']]);
-    $pointUser = $this->paginate('PointUser');
-    $this->set('pointUser', $pointUser);
-  }
+	public function admin_index() {
+		$this->pageTitle = 'チャージ（カード決済一覧）';
+		$conditions = [];
+		if ($this->request->is('post')){
+			$data = $this->request->data;
+			if($data['PayjpCharge']['id']) $conditions[] = array('PayjpCharge.id' => $data['PayjpCharge']['id']);
+			if($data['PayjpCharge']['mypage_id']) $conditions[] = array('PayjpCharge.mypage_id' => $data['PayjpCharge']['mypage_id']);
+			if($data['Mypage']['name']) $conditions[] = array('Mypage.name like' => '%'.$data['Mypage']['name'].'%');
+		}
+		$this->paginate = array('conditions' => $conditions,
+		'order' => 'PayjpCharge.created DESC',
+		'limit' => 50
+		);
+		//$this->PointUser->unbindModel(['hasMany' => ['PointBook']]);
+		$PayjpCharge = $this->paginate('PayjpCharge');
+		$this->set('PayjpCharge', $PayjpCharge);
+	}
   
   
   // フロント画面用のデフォルトアクション
