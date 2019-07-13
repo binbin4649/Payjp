@@ -18,6 +18,19 @@ class PayjpCharge extends AppModel {
 	];
 	
     
+    //有効なカード登録があるか？　あればtrue
+    public function isCustomer($mypage_id){
+	    $PayjpCustomer = $this->PayjpCustomer->find('first', array(
+        	'conditions' => array(
+        		'PayjpCustomer.mypage_id' => $mypage_id,
+        		'PayjpCustomer.status' => 'success',
+        	),
+        	'recursive' => -1
+		));
+		return $PayjpCustomer;
+    }
+    
+    
     //都度払い、customer登録しない
 	public function onceCharge($payjp_token, $amount, $mypage_id, $send_mail = true){
 		$amount = abs($amount);
@@ -94,8 +107,11 @@ class PayjpCharge extends AppModel {
 	
 	//顧客登録&更新
 	public function createCustomer($payjp_token, $mypage_id){
-		//既に登録があった場合は更新
+		//既に登録があった場合は一旦解除してもらってから
 		$PayjpCustomer = $this->PayjpCustomer->findByMypageId($mypage_id);
+		if($PayjpCustomer){
+			return false;
+		}
 		$secret_key = Configure::read('payjp.secret');
 		\Payjp\Payjp::setApiKey($secret_key);
 		try {
@@ -128,6 +144,29 @@ class PayjpCharge extends AppModel {
 		}else{
 			$PayjpCustomer['PayjpCustomer']['mypage_id'] = $mypage_id;
 			return $this->PayjpCustomer->save($PayjpCustomer);
+		}
+	}
+	
+	public function cancelCustomer($mypage_id){
+		$PayjpCustomer = $this->PayjpCustomer->findByMypageId($mypage_id);
+		if($PayjpCustomer){
+			$secret_key = Configure::read('payjp.secret');
+			\Payjp\Payjp::setApiKey($secret_key);
+			try {
+				$cu = \Payjp\Customer::retrieve($mypage_id);
+				$cu->delete();
+				if (isset($cu['error'])) {
+			        throw new Exception();
+			    }
+			}catch (Exception $e){
+				$error_body = $e->getJsonBody();
+				$this->log('PayjpCharge.php cancelCustomer : '.$error_body['error']['message']);
+				return false;
+			}
+			$this->PayjpCustomer->delete($PayjpCustomer['PayjpCustomer']['id']);
+			return true;
+		}else{
+			return false;
 		}
 	}
 	
@@ -172,7 +211,11 @@ class PayjpCharge extends AppModel {
 			'brand' => $charge->card->brand,
 			'last4' => $charge->card->last4,
 		];
-		return $this->save($PayjpCharge);
+		$PayjpCharge = $this->save($PayjpCharge);
+		if($PayjpCharge){
+			$PayjpCharge['PayjpCharge']['id'] = $this->getLastInsertId();
+		}
+		return $PayjpCharge;
 	}
 	
 	//顧客登録と一緒に支払いも
@@ -187,6 +230,8 @@ class PayjpCharge extends AppModel {
 			return $this->moreThanCharge($mypage_id, $amount);
 		}
 	}
+	
+	
 	
 	
 	//注：直してない
