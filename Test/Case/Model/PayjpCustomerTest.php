@@ -35,6 +35,11 @@ class PayjpCustomerTest extends BaserTestCase {
 	    parent::tearDown();
     }
     
+    public function testDummy(){
+	    $r = $this->PayjpCustomer->findById(1);
+	    $this->assertEquals('test', $r['PayjpCustomer']['card_token']);
+    }
+    
 /*
     public function testFalsePointAdd(){
 	    // mypage_idが無い

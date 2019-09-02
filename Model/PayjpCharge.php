@@ -180,6 +180,9 @@ class PayjpCharge extends AppModel {
 		if($amount < 1){
 			return false;
 		}
+		if(Configure::read('MccPlugin.TEST_MODE')){
+			return $this->moreThanChargeTest($mypage_id, $amount, $PayjpCustomer);
+		}
 		$secret_key = Configure::read('payjp.secret');
 		\Payjp\Payjp::setApiKey($secret_key);
 		try{
@@ -211,12 +214,33 @@ class PayjpCharge extends AppModel {
 			'brand' => $charge->card->brand,
 			'last4' => $charge->card->last4,
 		];
+		$this->create();
 		$PayjpCharge = $this->save($PayjpCharge);
 		if($PayjpCharge){
 			$PayjpCharge['PayjpCharge']['id'] = $this->getLastInsertId();
 		}
 		return $PayjpCharge;
 	}
+	
+	//テスト専用
+	public function moreThanChargeTest($mypage_id, $amount, $PayjpCustomer){
+		$PayjpCharge['PayjpCharge'] = [
+			'mypage_id' => $mypage_id,
+			'payjp_customer_id' => $PayjpCustomer['PayjpCustomer']['id'],
+			'status' => 'success',
+			'charge' => $amount,
+			'token' => 'testtesttesttest',
+			'brand' => 'visa',
+			'last4' => '4242',
+		];
+		$this->create();
+		$PayjpCharge = $this->save($PayjpCharge);
+		if($PayjpCharge){
+			$PayjpCharge['PayjpCharge']['id'] = $this->getLastInsertId();
+		}
+		return $PayjpCharge;
+	}
+	
 	
 	//顧客登録と一緒に支払いも
 	public function createAndCharge($payjp_token, $amount, $mypage_id){

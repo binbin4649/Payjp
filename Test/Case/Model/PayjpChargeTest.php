@@ -44,7 +44,8 @@ class PayjpChargeTest extends BaserTestCase {
 		$payjp_token = 'test';
 		$mypage_id = '1';
 		$r = $this->PayjpCharge->createCustomer($payjp_token, $mypage_id);
-		$this->assertEquals('error', $r['PayjpCustomer']['status']);
+		$this->assertFalse($r);
+		//$this->assertEquals('error', $r['PayjpCustomer']['status']);
 	}
 	
 	public function testCreateCustomer登録なしで更新もエラー(){
@@ -58,9 +59,7 @@ class PayjpChargeTest extends BaserTestCase {
 		$mypage_id = '1';
 		$amount = '3000';
 		$r = $this->PayjpCharge->moreThanCharge($mypage_id, $amount);
-		$this->assertFalse($r);
-		$r = $this->PayjpCustomer->findByMypageId($mypage_id);
-		$this->assertEquals('error', $r['PayjpCustomer']['status']);
+		$this->assertEquals('success', $r['PayjpCharge']['status']);
 	}
 	
 
