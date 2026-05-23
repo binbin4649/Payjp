@@ -41,12 +41,12 @@ class CreatePayjpCharges extends BaseMigration
             'limit' => 255,
             'null' => true,
         ]);
-        $table->addColumn('payjp_customer_id', 'string', [
+        $table->addColumn('payjp_customer_code', 'string', [
             'default' => null,
             'limit' => 255,
             'null' => true,
         ]);
-        $table->addColumn('payjp_charge_id', 'string', [
+        $table->addColumn('payjp_charge_code', 'string', [
             'default' => null,
             'limit' => 255,
             'null' => true,
@@ -90,8 +90,8 @@ class CreatePayjpCharges extends BaseMigration
         ]);
         $table->addIndex(['user_id']);
         $table->addIndex(['point_book_id']);
-        $table->addIndex(['payjp_customer_id']);
-        $table->addIndex(['payjp_charge_id']);
+        $table->addIndex(['payjp_customer_code']);
+        $table->addIndex(['payjp_charge_code']);
         $table->create();
     }
 }
