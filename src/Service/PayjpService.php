@@ -189,13 +189,30 @@ class PayjpService
 
     protected function payjpCreateCustomer(string $cardToken): array|false
     {
-        // PAY.JP API call
-        return false;
+        try {
+            \Payjp\Payjp::setApiKey(env('PAYJP_SECRET_KEY', ''));
+            $customer = \Payjp\Customer::create(['card' => $cardToken]);
+            return ['id' => $customer->id];
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     protected function payjpCreateCharge(array $params, string $idempotencyKey): array|false
     {
-        // PAY.JP API call
-        return false;
+        try {
+            \Payjp\Payjp::setApiKey(env('PAYJP_SECRET_KEY', ''));
+            $charge = \Payjp\Charge::create($params, ['idempotency_key' => $idempotencyKey]);
+            return [
+                'id'     => $charge->id,
+                'status' => $charge->status,
+                'card'   => [
+                    'brand' => $charge->card->brand ?? null,
+                    'last4' => $charge->card->last4 ?? null,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 }
