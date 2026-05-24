@@ -7,7 +7,9 @@
     <?= $this->Form->create(null, ['align' => 'inline', 'class' => 'row-cols-auto ms-1', 'type' => 'get', 'valueSources' => 'query', 'spacing' => 'g-1']) ?>
     <a href="/admin/payjpUsers" class="btn btn-sm btn-outline-light me-1"><i class="mdi mdi-reload"></i></a>
     <?= $this->Form->control('id', ['type' => 'text', 'value' => $id, 'escape' => true, 'style' => 'width: 60px;']) ?>
-    <?= $this->Form->control('q', ['type' => 'text', 'value' => $keyword, 'escape' => true]) ?>
+    <?= $this->Form->control('user_id', ['type' => 'text', 'value' => $user_id, 'escape' => true, 'style' => 'width: 80px;']) ?>
+    <?= $this->Form->control('status', ['type' => 'select', 'value' => $status, 'options' => $statuses, 'empty' => '-- ステータス --']) ?>
+    <?= $this->Form->control('type', ['type' => 'select', 'value' => $type, 'options' => $types, 'empty' => '-- タイプ --']) ?>
     <?= $this->Form->button('検索', ['class' => 'btn btn-primary']) ?>
     <?php if ($Identity->can('add', $payjpUser)) : ?>
         <?= $this->Html->link('新規作成', ['action' => 'add'], ['class' => 'btn btn-primary ms-4']) ?>
@@ -26,7 +28,7 @@
                                             <th>type</th>
                                             <th>auto_charge_amount</th>
                                             <th>payjp_card_token</th>
-                                            <th>payjp_customer_id</th>
+                                            <th>payjp_customer_code</th>
                                             <th>card_brand</th>
                                             <th>card_last4</th>
                                             <th>last_synced</th>
@@ -45,7 +47,7 @@
                                                                                                                                                                                                                                                                                                                                                                                                                                 <td><?= h($payjpUser->type) ?></td>
                                                                                                                                                                                                                                                                                                                                                                                                                                 <td><?= $payjpUser->auto_charge_amount === null ? '' : $this->Number->format($payjpUser->auto_charge_amount) ?></td>
                                                                                                                                                                                                                                                                                                                                                                                                                                 <td><?= h($payjpUser->payjp_card_token) ?></td>
-                                                                                                                                                                                                                                                                                                                                                                                                                                <td><?= h($payjpUser->payjp_customer_id) ?></td>
+                                                                                                                                                                                                                                                                                                                                                                                                                                <td><?= h($payjpUser->payjp_customer_code) ?></td>
                                                                                                                                                                                                                                                                                                                                                                                                                                 <td><?= h($payjpUser->card_brand) ?></td>
                                                                                                                                                                                                                                                                                                                                                                                                                                 <td><?= h($payjpUser->card_last4) ?></td>
                                                                                                                                                                                                                                                                                                                                                                                                                                 <td><?= h($payjpUser->last_synced) ?></td>
@@ -70,7 +72,6 @@
 
 <div class="container-fluid mt-3">
     <ul class="small text-muted">
-        <li>検索は左から、Id、フリーキーワードです。</li>
-        <li>フリーキーワードは、名前、が対象です。</li>
+        <li>検索はId、ユーザーId、ステータス、タイプで絞り込めます。</li>
     </ul>
 </div>

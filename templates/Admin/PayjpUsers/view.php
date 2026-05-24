@@ -46,11 +46,11 @@
                                 <li class="list-group-item"><span class="text-muted me-2">type:</span><?= h($payjpUser->type) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">auto_charge_amount:</span><?= h($payjpUser->auto_charge_amount) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">payjp_card_token:</span><?= h($payjpUser->payjp_card_token) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">payjp_customer_id:</span><?= h($payjpUser->payjp_customer_id) ?></li>
+                                <li class="list-group-item"><span class="text-muted me-2">payjp_customer_code:</span><?= h($payjpUser->payjp_customer_code) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">card_brand:</span><?= h($payjpUser->card_brand) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">card_last4:</span><?= h($payjpUser->card_last4) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">last_synced:</span><?= h($payjpUser->last_synced) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">log:</span><?= nl2br(h($payjpUser->log)) ?></li>
+                                <li class="list-group-item"><span class="text-muted me-2">log:</span><?= nl2br(h($payjpUser->log ?? '')) ?></li>
                             </ul>
             </div>
             <div class="col-md-5"></div>

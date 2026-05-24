@@ -7,6 +7,7 @@ use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
 use Member\Model\Table\AppTable;
+use Payjp\Model\Entity\PayjpUser;
 
 /**
  * PayjpUsers Model
@@ -69,12 +70,14 @@ class PayjpUsersTable extends AppTable
         $validator
             ->scalar('status')
             ->maxLength('status', 255)
+            ->inList('status', array_keys(PayjpUser::STATUS))
             ->requirePresence('status', 'create')
             ->notEmptyString('status');
 
         $validator
             ->scalar('type')
             ->maxLength('type', 255)
+            ->inList('type', array_keys(PayjpUser::TYPE))
             ->requirePresence('type', 'create')
             ->notEmptyString('type');
 
@@ -125,5 +128,15 @@ class PayjpUsersTable extends AppTable
         $rules->add($rules->existsIn(['user_id'], 'Users'), ['errorField' => 'user_id']);
 
         return $rules;
+    }
+
+    public function findByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query->where(['PayjpUsers.user_id' => $userId]);
+    }
+
+    public function findActiveByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query->where(['PayjpUsers.user_id' => $userId, 'PayjpUsers.status' => 'active']);
     }
 }

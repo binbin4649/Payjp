@@ -41,7 +41,7 @@ class CreatePayjpUsers extends BaseMigration
             'limit' => 255,
             'null' => true,
         ]);
-        $table->addColumn('payjp_customer_code', 'string', [
+        $table->addColumn('payjp_customer_id', 'string', [
             'default' => null,
             'limit' => 255,
             'null' => true,
@@ -73,7 +73,7 @@ class CreatePayjpUsers extends BaseMigration
             'null' => false,
         ]);
         $table->addIndex(['user_id']);
-        $table->addIndex(['payjp_customer_code']);
+        $table->addIndex(['payjp_customer_id']);
         $table->create();
     }
 }

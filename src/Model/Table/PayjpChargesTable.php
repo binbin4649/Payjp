@@ -7,6 +7,7 @@ use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
 use Member\Model\Table\AppTable;
+use Payjp\Model\Entity\PayjpCharge;
 
 /**
  * PayjpCharges Model
@@ -55,7 +56,7 @@ class PayjpChargesTable extends AppTable
         ]);
         $this->belongsTo('PointBooks', [
             'foreignKey' => 'point_book_id',
-            'joinType' => 'INNER',
+            'joinType' => 'LEFT',
             'className' => 'Payjp.PointBooks',
         ]);
     }
@@ -74,17 +75,19 @@ class PayjpChargesTable extends AppTable
 
         $validator
             ->integer('point_book_id')
-            ->notEmptyString('point_book_id');
+            ->allowEmptyString('point_book_id');
 
         $validator
             ->scalar('status')
             ->maxLength('status', 255)
+            ->inList('status', array_keys(PayjpCharge::STATUS))
             ->requirePresence('status', 'create')
             ->notEmptyString('status');
 
         $validator
             ->scalar('type')
             ->maxLength('type', 255)
+            ->inList('type', array_keys(PayjpCharge::TYPE))
             ->requirePresence('type', 'create')
             ->notEmptyString('type');
 
@@ -145,8 +148,13 @@ class PayjpChargesTable extends AppTable
     public function buildRules(RulesChecker $rules): RulesChecker
     {
         $rules->add($rules->existsIn(['user_id'], 'Users'), ['errorField' => 'user_id']);
-        $rules->add($rules->existsIn(['point_book_id'], 'PointBooks'), ['errorField' => 'point_book_id']);
 
         return $rules;
+    }
+
+    public function findByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query->where(['PayjpCharges.user_id' => $userId])
+                     ->orderByDesc('PayjpCharges.created');
     }
 }

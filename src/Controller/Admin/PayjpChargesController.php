@@ -46,24 +46,20 @@ class PayjpChargesController extends AppController
     {
         $this->set('title', 'payjpCharges一覧');
         $this->Authorization->skipAuthorization();
-        $keyword = $id = '';
-        $query = $this->PayjpCharges->find()
-            ->contain(['Users', 'PointBooks']);
+        $id = $user_id = $status = $type = '';
+        $query = $this->PayjpCharges->find()->contain(['Users']);
         $queryParams = $this->Mem->cleaningParams($this->request->getQuery());
         extract($queryParams);
-        if (!empty($keyword)) {
-            $query->where([
-                'OR' => [
-                    'PayjpCharges.name LIKE' => '%' . $keyword . '%',
-                ]
-            ]);
-        }
-        if (!empty($id)) $query->where(['PayjpCharges.id' => $id]);
+        if (!empty($id))      $query->where(['PayjpCharges.id' => $id]);
+        if (!empty($user_id)) $query->where(['PayjpCharges.user_id' => $user_id]);
+        if (!empty($status))  $query->where(['PayjpCharges.status' => $status]);
+        if (!empty($type))    $query->where(['PayjpCharges.type' => $type]);
         $payjpCharges = $this->paginate($query);
-        $payjpCharge = $this->PayjpCharges->newEmptyEntity();
-        $Identity = $this->Authentication->getIdentity();
-
-        $this->set(compact('payjpCharges', 'payjpCharge', 'Identity', 'keyword', 'id'));
+        $payjpCharge  = $this->PayjpCharges->newEmptyEntity();
+        $statuses     = PayjpCharge::STATUS;
+        $types        = PayjpCharge::TYPE;
+        $Identity     = $this->Authentication->getIdentity();
+        $this->set(compact('payjpCharges', 'payjpCharge', 'Identity', 'statuses', 'types', 'id', 'user_id', 'status', 'type'));
     }
 
     /**
@@ -77,7 +73,7 @@ class PayjpChargesController extends AppController
     {
         $this->set('title', 'Payjp Charge詳細');
         $Identity = $this->Authentication->getIdentity();
-        $payjpCharge = $this->PayjpCharges->get($id, contain: ['Users', 'PointBooks']);
+        $payjpCharge = $this->PayjpCharges->get($id, contain: ['Users']);
         $this->Authorization->authorize($payjpCharge, 'view');
         $changeLogs = $this->changeLogTable->find('latest', model_name: 'PayjpCharges', record_id: $id);
         $this->set(compact('payjpCharge', 'changeLogs', 'Identity'));

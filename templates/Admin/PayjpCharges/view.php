@@ -53,7 +53,7 @@
                                 <li class="list-group-item"><span class="text-muted me-2">card_brand:</span><?= h($payjpCharge->card_brand) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">card_last4:</span><?= h($payjpCharge->card_last4) ?></li>
                                 <li class="list-group-item"><span class="text-muted me-2">idempotency_key:</span><?= h($payjpCharge->idempotency_key) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">log:</span><?= nl2br(h($payjpCharge->log)) ?></li>
+                                <li class="list-group-item"><span class="text-muted me-2">log:</span><?= nl2br(h($payjpCharge->log ?? '')) ?></li>
                             </ul>
             </div>
             <div class="col-md-5"></div>

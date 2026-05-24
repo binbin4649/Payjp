@@ -8,6 +8,7 @@ namespace Payjp\Controller\Admin;
 use Payjp\Model\Entity\PayjpUser;
 use Cake\ORM\TableRegistry;
 use Cake\Event\EventInterface;
+use Cake\Datasource\Exception\RecordNotFoundException;
 
 /**
  * PayjpUsers Controller
@@ -46,24 +47,20 @@ class PayjpUsersController extends AppController
     {
         $this->set('title', 'payjpUsers一覧');
         $this->Authorization->skipAuthorization();
-        $keyword = $id = '';
-        $query = $this->PayjpUsers->find()
-            ->contain(['Users']);
+        $id = $user_id = $status = $type = '';
+        $query = $this->PayjpUsers->find()->contain(['Users']);
         $queryParams = $this->Mem->cleaningParams($this->request->getQuery());
         extract($queryParams);
-        if (!empty($keyword)) {
-            $query->where([
-                'OR' => [
-                    'PayjpUsers.name LIKE' => '%' . $keyword . '%',
-                ]
-            ]);
-        }
-        if (!empty($id)) $query->where(['PayjpUsers.id' => $id]);
+        if (!empty($id))      $query->where(['PayjpUsers.id' => $id]);
+        if (!empty($user_id)) $query->where(['PayjpUsers.user_id' => $user_id]);
+        if (!empty($status))  $query->where(['PayjpUsers.status' => $status]);
+        if (!empty($type))    $query->where(['PayjpUsers.type' => $type]);
         $payjpUsers = $this->paginate($query);
-        $payjpUser = $this->PayjpUsers->newEmptyEntity();
-        $Identity = $this->Authentication->getIdentity();
-
-        $this->set(compact('payjpUsers', 'payjpUser', 'Identity', 'keyword', 'id'));
+        $payjpUser  = $this->PayjpUsers->newEmptyEntity();
+        $statuses   = PayjpUser::STATUS;
+        $types      = PayjpUser::TYPE;
+        $Identity   = $this->Authentication->getIdentity();
+        $this->set(compact('payjpUsers', 'payjpUser', 'Identity', 'statuses', 'types', 'id', 'user_id', 'status', 'type'));
     }
 
     /**
