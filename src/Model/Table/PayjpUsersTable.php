@@ -7,6 +7,7 @@ use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
 use Member\Model\Table\AppTable;
+use Payjp\Model\Entity\PayjpUser;
 
 /**
  * PayjpUsers Model
@@ -70,13 +71,15 @@ class PayjpUsersTable extends AppTable
             ->scalar('status')
             ->maxLength('status', 255)
             ->requirePresence('status', 'create')
-            ->notEmptyString('status');
+            ->notEmptyString('status')
+            ->inList('status', array_keys(PayjpUser::STATUS));
 
         $validator
             ->scalar('type')
             ->maxLength('type', 255)
             ->requirePresence('type', 'create')
-            ->notEmptyString('type');
+            ->notEmptyString('type')
+            ->inList('type', array_keys(PayjpUser::TYPE));
 
         $validator
             ->integer('auto_charge_amount')
@@ -125,5 +128,33 @@ class PayjpUsersTable extends AppTable
         $rules->add($rules->existsIn(['user_id'], 'Users'), ['errorField' => 'user_id']);
 
         return $rules;
+    }
+
+    /**
+     * ユーザーの PAY.JP 顧客一覧を取得するファインダー。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param int $userId 対象ユーザーID。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query->where(['PayjpUsers.user_id' => $userId]);
+    }
+
+    /**
+     * off-session オートチャージ対象（status=active かつ PaymentMethod 登録済み）を取得するファインダー。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param int $userId 対象ユーザーID。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findActiveByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query->where([
+            'PayjpUsers.user_id' => $userId,
+            'PayjpUsers.status' => 'active',
+            'PayjpUsers.payjp_payment_method_code IS NOT' => null,
+        ]);
     }
 }

@@ -30,13 +30,17 @@ use Member\Model\Entity\AppEntity;
  */
 class PayjpCharge extends AppEntity
 {
-    /**
     public const STATUS = [
-        'temp' => '仮登録',
-        'active' => '有効',
-        'inactive' => '無効',
+        'pending' => '処理待ち',
+        'processing' => '処理中',
+        'success' => '決済成功',
+        'failure' => '決済失敗',
     ];
-    */
+
+    public const TYPE = [
+        'one_time' => '都度課金',
+        'auto_charge' => 'オートチャージ',
+    ];
 
     /**
      * Fields that can be mass assigned using newEntity() or patchEntity().

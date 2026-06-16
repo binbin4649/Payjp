@@ -7,6 +7,7 @@ use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
 use Member\Model\Table\AppTable;
+use Payjp\Model\Entity\PayjpCharge;
 
 /**
  * PayjpCharges Model
@@ -74,19 +75,21 @@ class PayjpChargesTable extends AppTable
 
         $validator
             ->integer('point_book_id')
-            ->notEmptyString('point_book_id');
+            ->allowEmptyString('point_book_id');
 
         $validator
             ->scalar('status')
             ->maxLength('status', 255)
             ->requirePresence('status', 'create')
-            ->notEmptyString('status');
+            ->notEmptyString('status')
+            ->inList('status', array_keys(PayjpCharge::STATUS));
 
         $validator
             ->scalar('type')
             ->maxLength('type', 255)
             ->requirePresence('type', 'create')
-            ->notEmptyString('type');
+            ->notEmptyString('type')
+            ->inList('type', array_keys(PayjpCharge::TYPE));
 
         $validator
             ->scalar('payjp_status')
@@ -150,8 +153,37 @@ class PayjpChargesTable extends AppTable
     public function buildRules(RulesChecker $rules): RulesChecker
     {
         $rules->add($rules->existsIn(['user_id'], 'Users'), ['errorField' => 'user_id']);
-        $rules->add($rules->existsIn(['point_book_id'], 'PointBooks'), ['errorField' => 'point_book_id']);
+        $rules->add(
+            $rules->existsIn(['point_book_id'], 'PointBooks', ['allowNullableNulls' => true]),
+            ['errorField' => 'point_book_id']
+        );
 
         return $rules;
+    }
+
+    /**
+     * ユーザーの決済履歴を新しい順に取得するファインダー。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param int $userId 対象ユーザーID。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query
+            ->where(['PayjpCharges.user_id' => $userId])
+            ->orderBy(['PayjpCharges.created' => 'DESC', 'PayjpCharges.id' => 'DESC']);
+    }
+
+    /**
+     * Checkout Session ID（cs_...）で課金レコードを取得するファインダー。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param string $sessionId Checkout Session ID。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findByCheckoutSession(SelectQuery $query, string $sessionId): SelectQuery
+    {
+        return $query->where(['PayjpCharges.payjp_checkout_session_code' => $sessionId]);
     }
 }
