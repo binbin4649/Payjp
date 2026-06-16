@@ -5,7 +5,6 @@ namespace Payjp\Test\TestCase\Controller\Admin;
 
 use Cake\TestSuite\IntegrationTestTrait;
 use Cake\TestSuite\TestCase;
-use Payjp\Controller\Admin\PayjpChargesController;
 
 /**
  * Payjp\Controller\Admin\PayjpChargesController Test Case
@@ -16,78 +15,94 @@ class PayjpChargesControllerTest extends TestCase
 {
     use IntegrationTestTrait;
 
-    /**
-     * Fixtures
-     *
-     * @var list<string>
-     */
     protected array $fixtures = [
         'plugin.Payjp.PayjpCharges',
+        'plugin.Payjp.Users',
+        'plugin.Payjp.Companies',
+        'plugin.Payjp.PointBooks',
+        'plugin.Payjp.PointUsers',
+        'plugin.Member.Admins',
     ];
 
-    /**
-     * Test beforeFilter method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpChargesController::beforeFilter()
-     */
-    public function testBeforeFilter(): void
+    protected function setUp(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        parent::setUp();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
     }
 
-    /**
-     * Test index method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpChargesController::index()
-     */
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+    }
+
+    private function loginAsAdmin(): void
+    {
+        $adminsTable = $this->getTableLocator()->get('Member.Admins');
+        $admin = $adminsTable->get(1);
+        $this->session(['Auth.Admin' => $admin->toArray()]);
+    }
+
+    // ---- index ----
+
     public function testIndex(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('payjpCharges'));
     }
 
-    /**
-     * Test view method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpChargesController::view()
-     */
+    public function testIndex_unauthenticated(): void
+    {
+        $this->get('/payjp/admin/payjp-charges');
+        $this->assertResponseCode(302);
+    }
+
+    public function testIndex_filterById(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges?id=1');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('payjpCharges'));
+    }
+
+    public function testIndex_filterByStatus(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges?status=success');
+        $this->assertResponseOk();
+    }
+
+    public function testIndex_filterByType(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges?type=one_time');
+        $this->assertResponseOk();
+    }
+
+    // ---- view ----
+
     public function testView(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges/view/1');
+        $this->assertResponseOk();
+        $payjpCharge = $this->viewVariable('payjpCharge');
+        $this->assertNotNull($payjpCharge);
+        $this->assertSame(1, $payjpCharge->id);
     }
 
-    /**
-     * Test add method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpChargesController::add()
-     */
-    public function testAdd(): void
+    public function testView_unauthenticated(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->get('/payjp/admin/payjp-charges/view/1');
+        $this->assertResponseCode(302);
     }
 
-    /**
-     * Test edit method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpChargesController::edit()
-     */
-    public function testEdit(): void
+    public function testView_notFound(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
-    }
-
-    /**
-     * Test delete method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpChargesController::delete()
-     */
-    public function testDelete(): void
-    {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges/view/9999');
+        $this->assertResponseCode(404);
     }
 }

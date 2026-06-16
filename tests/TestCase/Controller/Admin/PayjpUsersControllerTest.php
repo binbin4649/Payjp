@@ -5,7 +5,6 @@ namespace Payjp\Test\TestCase\Controller\Admin;
 
 use Cake\TestSuite\IntegrationTestTrait;
 use Cake\TestSuite\TestCase;
-use Payjp\Controller\Admin\PayjpUsersController;
 
 /**
  * Payjp\Controller\Admin\PayjpUsersController Test Case
@@ -16,78 +15,92 @@ class PayjpUsersControllerTest extends TestCase
 {
     use IntegrationTestTrait;
 
-    /**
-     * Fixtures
-     *
-     * @var list<string>
-     */
     protected array $fixtures = [
         'plugin.Payjp.PayjpUsers',
+        'plugin.Payjp.Users',
+        'plugin.Payjp.Companies',
+        'plugin.Member.Admins',
     ];
 
-    /**
-     * Test beforeFilter method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpUsersController::beforeFilter()
-     */
-    public function testBeforeFilter(): void
+    protected function setUp(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        parent::setUp();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
     }
 
-    /**
-     * Test index method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpUsersController::index()
-     */
+    protected function tearDown(): void
+    {
+        parent::tearDown();
+    }
+
+    private function loginAsAdmin(): void
+    {
+        $adminsTable = $this->getTableLocator()->get('Member.Admins');
+        $admin = $adminsTable->get(1);
+        $this->session(['Auth.Admin' => $admin->toArray()]);
+    }
+
+    // ---- index ----
+
     public function testIndex(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('payjpUsers'));
     }
 
-    /**
-     * Test view method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpUsersController::view()
-     */
+    public function testIndex_unauthenticated(): void
+    {
+        $this->get('/payjp/admin/payjp-users');
+        $this->assertResponseCode(302);
+    }
+
+    public function testIndex_filterById(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users?id=1');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('payjpUsers'));
+    }
+
+    public function testIndex_filterByStatus(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users?status=active');
+        $this->assertResponseOk();
+    }
+
+    public function testIndex_filterByType(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users?type=auto_charge');
+        $this->assertResponseOk();
+    }
+
+    // ---- view ----
+
     public function testView(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users/view/1');
+        $this->assertResponseOk();
+        $payjpUser = $this->viewVariable('payjpUser');
+        $this->assertNotNull($payjpUser);
+        $this->assertSame(1, $payjpUser->id);
     }
 
-    /**
-     * Test add method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpUsersController::add()
-     */
-    public function testAdd(): void
+    public function testView_unauthenticated(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->get('/payjp/admin/payjp-users/view/1');
+        $this->assertResponseCode(302);
     }
 
-    /**
-     * Test edit method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpUsersController::edit()
-     */
-    public function testEdit(): void
+    public function testView_notFound(): void
     {
-        $this->markTestIncomplete('Not implemented yet.');
-    }
-
-    /**
-     * Test delete method
-     *
-     * @return void
-     * @uses \Payjp\Controller\Admin\PayjpUsersController::delete()
-     */
-    public function testDelete(): void
-    {
-        $this->markTestIncomplete('Not implemented yet.');
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users/view/9999');
+        $this->assertResponseCode(404);
     }
 }

@@ -24,7 +24,7 @@ class CreatePayjpCharges extends BaseMigration
         $table->addColumn('point_book_id', 'integer', [
             'default' => null,
             'limit' => 11,
-            'null' => false,
+            'null' => true,
         ]);
         $table->addColumn('status', 'string', [
             'default' => null,
@@ -46,7 +46,7 @@ class CreatePayjpCharges extends BaseMigration
             'limit' => 255,
             'null' => true,
         ]);
-        $table->addColumn('ayjp_checkout_session_code', 'string', [
+        $table->addColumn('payjp_checkout_session_code', 'string', [
             'default' => null,
             'limit' => 255,
             'null' => true,

@@ -7,6 +7,12 @@ use Cake\TestSuite\Fixture\TestFixture;
 
 /**
  * PayjpUsersFixture
+ *
+ * 顧客ステータス・PaymentMethod の有無を作り分けて finder / chargeAuto の遷移を検証する。
+ *  - id=1 : active かつ payjp_payment_method_code あり（findActiveByUser 対象 / active→active）
+ *  - id=2 : active だが payjp_payment_method_code が NULL（findActiveByUser 除外）
+ *  - id=3 : suspended かつ pm あり（リトライ対象 / suspended→active|inactive）
+ *  - id=4 : inactive（除外確認）
  */
 class PayjpUsersFixture extends TestFixture
 {
@@ -21,17 +27,62 @@ class PayjpUsersFixture extends TestFixture
             [
                 'id' => 1,
                 'user_id' => 1,
-                'status' => 'Lorem ipsum dolor sit amet',
-                'type' => 'Lorem ipsum dolor sit amet',
-                'auto_charge_amount' => 1,
-                'payjp_customer_code' => 'Lorem ipsum dolor sit amet',
-                'payjp_payment_method_code' => 'Lorem ipsum dolor sit amet',
-                'card_brand' => 'Lorem ipsum dolor sit amet',
-                'card_last4' => 'Lorem ipsum dolor sit amet',
-                'last_synced' => '2026-06-15 18:21:06',
-                'log' => 'Lorem ipsum dolor sit amet, aliquet feugiat. Convallis morbi fringilla gravida, phasellus feugiat dapibus velit nunc, pulvinar eget sollicitudin venenatis cum nullam, vivamus ut a sed, mollitia lectus. Nulla vestibulum massa neque ut et, id hendrerit sit, feugiat in taciti enim proin nibh, tempor dignissim, rhoncus duis vestibulum nunc mattis convallis.',
-                'created' => '2026-06-15 18:21:06',
-                'modified' => '2026-06-15 18:21:06',
+                'status' => 'active',
+                'type' => 'auto_charge',
+                'auto_charge_amount' => 10000,
+                'payjp_customer_code' => 'cus_test_1',
+                'payjp_payment_method_code' => 'pm_test_1',
+                'card_brand' => 'Visa',
+                'card_last4' => '4242',
+                'last_synced' => '2026-06-10 10:00:00',
+                'log' => null,
+                'created' => '2026-06-01 10:00:00',
+                'modified' => '2026-06-10 10:00:00',
+            ],
+            [
+                'id' => 2,
+                'user_id' => 2,
+                'status' => 'active',
+                'type' => 'auto_charge',
+                'auto_charge_amount' => 5000,
+                'payjp_customer_code' => 'cus_test_2',
+                'payjp_payment_method_code' => null,
+                'card_brand' => null,
+                'card_last4' => null,
+                'last_synced' => null,
+                'log' => null,
+                'created' => '2026-06-02 10:00:00',
+                'modified' => '2026-06-02 10:00:00',
+            ],
+            [
+                'id' => 3,
+                'user_id' => 3,
+                'status' => 'suspended',
+                'type' => 'auto_charge',
+                'auto_charge_amount' => 8000,
+                'payjp_customer_code' => 'cus_test_3',
+                'payjp_payment_method_code' => 'pm_test_3',
+                'card_brand' => 'Mastercard',
+                'card_last4' => '5555',
+                'last_synced' => '2026-06-08 10:00:00',
+                'log' => 'previous auto charge failed',
+                'created' => '2026-06-03 10:00:00',
+                'modified' => '2026-06-08 10:00:00',
+            ],
+            [
+                'id' => 4,
+                'user_id' => 4,
+                'status' => 'inactive',
+                'type' => 'auto_charge',
+                'auto_charge_amount' => 3000,
+                'payjp_customer_code' => 'cus_test_4',
+                'payjp_payment_method_code' => 'pm_test_4',
+                'card_brand' => 'JCB',
+                'card_last4' => '0000',
+                'last_synced' => '2026-06-07 10:00:00',
+                'log' => 'auto charge stopped',
+                'created' => '2026-06-04 10:00:00',
+                'modified' => '2026-06-07 10:00:00',
             ],
         ];
         parent::init();

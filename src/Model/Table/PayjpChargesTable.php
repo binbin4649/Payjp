@@ -99,9 +99,9 @@ class PayjpChargesTable extends AppTable
             ->allowEmptyString('payjp_customer_code');
 
         $validator
-            ->scalar('ayjp_checkout_session_code')
-            ->maxLength('ayjp_checkout_session_code', 255)
-            ->allowEmptyString('ayjp_checkout_session_code');
+            ->scalar('payjp_checkout_session_code')
+            ->maxLength('payjp_checkout_session_code', 255)
+            ->allowEmptyString('payjp_checkout_session_code');
 
         $validator
             ->scalar('payjp_payment_flow_code')

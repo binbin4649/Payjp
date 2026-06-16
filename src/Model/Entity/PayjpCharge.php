@@ -14,7 +14,7 @@ use Member\Model\Entity\AppEntity;
  * @property string $type
  * @property string|null $payjp_status
  * @property string|null $payjp_customer_code
- * @property string|null $ayjp_checkout_session_code
+ * @property string|null $payjp_checkout_session_code
  * @property string|null $payjp_payment_flow_code
  * @property string|null $payjp_payment_method_code
  * @property int $amount
@@ -54,7 +54,7 @@ class PayjpCharge extends AppEntity
         'type' => true,
         'payjp_status' => true,
         'payjp_customer_code' => true,
-        'ayjp_checkout_session_code' => true,
+        'payjp_checkout_session_code' => true,
         'payjp_payment_flow_code' => true,
         'payjp_payment_method_code' => true,
         'amount' => true,
