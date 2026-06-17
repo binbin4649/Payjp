@@ -313,6 +313,85 @@ class PayjpServiceTest extends TestCase
     }
 
     // ============================================================
+    // chargeAutoIfBelow（残高 < auto_charge_amount のときのみ課金）
+    // ============================================================
+
+    public function testChargeAutoIfBelow_activeBalanceBelow_charges(): void
+    {
+        // user 1: auto_charge_amount=10000 / 残高 point=1000 < 10000 → 課金
+        $api = $this->apiSuccess([
+            'createPaymentFlow' => ['id' => 'pf_below_1', 'status' => 'succeeded', 'card_brand' => 'Visa', 'card_last4' => '4242'],
+        ]);
+        $service = new PayjpService($api);
+
+        $before = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+
+        $charge = $service->chargeAutoIfBelow(1);
+
+        $this->assertInstanceOf(PayjpCharge::class, $charge);
+        $this->assertSame('success', $charge->status);
+        $this->assertSame('auto_charge', $charge->type);
+        $this->assertSame(10000, $charge->amount);
+
+        $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+        $this->assertSame($before + 10000, $after);
+    }
+
+    public function testChargeAutoIfBelow_suspendedBalanceBelow_chargesAndRecovers(): void
+    {
+        // user 3: suspended / auto_charge_amount=8000 / 残高 point=500 < 8000 → 課金して active 復帰
+        $api = $this->apiSuccess([
+            'createPaymentFlow' => ['id' => 'pf_below_3', 'status' => 'succeeded', 'card_brand' => 'Mastercard', 'card_last4' => '5555'],
+        ]);
+        $service = new PayjpService($api);
+
+        $charge = $service->chargeAutoIfBelow(3);
+
+        $this->assertInstanceOf(PayjpCharge::class, $charge);
+        $this->assertSame('success', $charge->status);
+        $this->assertSame('active', $this->payjpUsers()->get(3)->status);
+    }
+
+    public function testChargeAutoIfBelow_balanceAtOrAboveAmount_doesNotCharge(): void
+    {
+        // 残高 == auto_charge_amount（10000）→ 下回っていないので課金しない
+        $pointUsers = $this->pointUsers();
+        $user = $pointUsers->find()->where(['user_id' => 1])->first();
+        $user->point = 10000;
+        $pointUsers->save($user);
+
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->never())->method('createPaymentFlow');
+        $service = new PayjpService($api);
+
+        $this->assertFalse($service->chargeAutoIfBelow(1));
+
+        // 残高据え置き・payjp_users 据え置き
+        $this->assertSame(10000, $this->pointUsers()->find()->where(['user_id' => 1])->first()->point);
+        $this->assertSame('active', $this->payjpUsers()->get(1)->status);
+    }
+
+    public function testChargeAutoIfBelow_noChargeableCustomer_returnsFalse(): void
+    {
+        // user 2: active だが payjp_payment_method_code が NULL → 対象外
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->never())->method('createPaymentFlow');
+        $service = new PayjpService($api);
+
+        $this->assertFalse($service->chargeAutoIfBelow(2));
+    }
+
+    public function testChargeAutoIfBelow_noPayjpUser_returnsFalse(): void
+    {
+        // user 5: payjp_users 行なし
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->never())->method('createPaymentFlow');
+        $service = new PayjpService($api);
+
+        $this->assertFalse($service->chargeAutoIfBelow(5));
+    }
+
+    // ============================================================
     // deleteCustomer
     // ============================================================
 

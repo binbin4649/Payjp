@@ -147,13 +147,7 @@ class PayjpService
      */
     public function chargeAuto(int $userId): PayjpCharge|false
     {
-        $user = $this->payjpUsers->find()
-            ->where([
-                'PayjpUsers.user_id' => $userId,
-                'PayjpUsers.status IN' => ['active', 'suspended'],
-                'PayjpUsers.payjp_payment_method_code IS NOT' => null,
-            ])
-            ->first();
+        $user = $this->findChargeableUser($userId);
         if ($user === null) {
             return false;
         }
@@ -220,6 +214,35 @@ class PayjpService
         $this->payjpUsers->save($user);
 
         return false;
+    }
+
+    /**
+     * 残ポイントが auto_charge_amount を下回っている場合のみオートチャージを実行する。
+     *
+     * カード登録完了直後にメインアプリ／コントローラーから呼び出すことを想定した補助フロー。
+     * 「いつ呼ぶか」はメインアプリの責務だが、「残高 < auto_charge_amount なら課金する」機構を
+     * Payjp が提供する。残高判定は PointService::getBalance() 経由で行う。
+     *
+     * @param int $userId 対象ユーザーID。
+     * @return \Payjp\Model\Entity\PayjpCharge|false 課金した場合 PayjpCharge、不要・対象外・残高不明時 false。
+     */
+    public function chargeAutoIfBelow(int $userId): PayjpCharge|false
+    {
+        $user = $this->findChargeableUser($userId);
+        if ($user === null) {
+            return false;
+        }
+
+        $balance = (new PointService())->getBalance($userId);
+        if ($balance === null) {
+            return false;
+        }
+
+        if ($balance >= (int)$user->auto_charge_amount) {
+            return false;
+        }
+
+        return $this->chargeAuto($userId);
     }
 
     /**
@@ -508,6 +531,26 @@ class PayjpService
             'log' => $log,
         ]);
         $this->payjpCharges->save($charge);
+    }
+
+    /**
+     * off-session オートチャージ対象の顧客を取得する。
+     *
+     * status が active / suspended かつ payjp_payment_method_code を持つ顧客を引く。
+     * chargeAuto() / chargeAutoIfBelow() で共用する。
+     *
+     * @param int $userId 対象ユーザーID。
+     * @return \Payjp\Model\Entity\PayjpUser|null
+     */
+    private function findChargeableUser(int $userId): ?PayjpUser
+    {
+        return $this->payjpUsers->find()
+            ->where([
+                'PayjpUsers.user_id' => $userId,
+                'PayjpUsers.status IN' => ['active', 'suspended'],
+                'PayjpUsers.payjp_payment_method_code IS NOT' => null,
+            ])
+            ->first();
     }
 
     /**
