@@ -1,9 +1,11 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Payjp\Test\TestCase\Service;
 
 use Cake\TestSuite\TestCase;
+use Cake\Core\Configure;
 use Payjp\Model\Entity\PayjpCharge;
 use Payjp\Model\Entity\PayjpUser;
 use Payjp\Service\PayjpApiService;
@@ -84,6 +86,28 @@ class PayjpServiceTest extends TestCase
     private function pointUsers()
     {
         return $this->getTableLocator()->get('Point.PointUsers');
+    }
+
+    //composer test:payjp -- tests/TestCase/Service/PayjpServiceTest.php --filter testCreatePaymentCheckout1
+    public function testCreatePaymentCheckout1(): void
+    {
+        Configure::write('Payjp.secret', Configure::read('Payjp.secret_test'));
+        $siteUrl = Configure::read('DUB_APP.site_url');
+        $service = new PayjpService();
+
+        $url = $service->createPaymentCheckout(5, 3000, [
+            'success_url' => $siteUrl . '/payjp/payment/complete',
+            'cancel_url' => $siteUrl . '/payjp/payment/complete',
+        ]);
+        $id = str_replace('https://c.pay.jp/c/pay/', '', $url);
+        $this->assertTrue(filter_var($url, FILTER_VALIDATE_URL) !== false);
+
+        $charge = $this->payjpCharges()->find()->where(['payjp_checkout_session_code' => $id])->first();
+        $this->assertNotNull($charge);
+        $this->assertSame('pending', $charge->status);
+        $this->assertSame('one_time', $charge->type);
+        $this->assertSame(3000, $charge->amount);
+        $this->assertNull($charge->point_book_id, '確定前は point_book_id NULL');
     }
 
     // ============================================================
