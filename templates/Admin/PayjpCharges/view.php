@@ -1,7 +1,9 @@
 <?php
+
 /**
  * @var \App\View\AppView $this
  * @var \Cake\Datasource\EntityInterface $payjpCharge
+ * @var \Authorization\IdentityInterface $Identity
  */
 ?>
 
@@ -42,20 +44,20 @@
                         <span class="me-2">created:<?= $payjpCharge->created ?></span>
                     </li>
                     <li class="list-group-item"><span class="text-muted me-2">user_id:</span><?= h($payjpCharge->user_id) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">point_book_id:</span><?= h($payjpCharge->point_book_id) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">ステータス:</span><?= $this->Mem->statusBadge($payjpCharge->status) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">type:</span><?= h($payjpCharge->type) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">payjp_status:</span><?= h($payjpCharge->payjp_status) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">payjp_customer_code:</span><?= h($payjpCharge->payjp_customer_code) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">ayjp_checkout_session_code:</span><?= h($payjpCharge->ayjp_checkout_session_code) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">payjp_payment_flow_code:</span><?= h($payjpCharge->payjp_payment_flow_code) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">payjp_payment_method_code:</span><?= h($payjpCharge->payjp_payment_method_code) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">amount:</span><?= h($payjpCharge->amount) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">card_brand:</span><?= h($payjpCharge->card_brand) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">card_last4:</span><?= h($payjpCharge->card_last4) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">idempotency_key:</span><?= h($payjpCharge->idempotency_key) ?></li>
-                                <li class="list-group-item"><span class="text-muted me-2">log:</span><?= nl2br(h($payjpCharge->log)) ?></li>
-                            </ul>
+                    <li class="list-group-item"><span class="text-muted me-2">point_book_id:</span><?= h($payjpCharge->point_book_id) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">ステータス:</span><?= $this->Mem->statusBadge($payjpCharge->status) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">type:</span><?= h($payjpCharge->type) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">payjp_status:</span><?= h($payjpCharge->payjp_status) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">payjp_customer_code:</span><?= h($payjpCharge->payjp_customer_code) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">ayjp_checkout_session_code:</span><?= h($payjpCharge->ayjp_checkout_session_code) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">payjp_payment_flow_code:</span><?= h($payjpCharge->payjp_payment_flow_code) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">payjp_payment_method_code:</span><?= h($payjpCharge->payjp_payment_method_code) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">amount:</span><?= h($payjpCharge->amount) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">card_brand:</span><?= h($payjpCharge->card_brand) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">card_last4:</span><?= h($payjpCharge->card_last4) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">idempotency_key:</span><?= h($payjpCharge->idempotency_key) ?></li>
+                    <li class="list-group-item"><span class="text-muted me-2">log:</span><?= $payjpCharge->log ? nl2br(h($payjpCharge->log)) : '' ?></li>
+                </ul>
             </div>
             <div class="col-md-5"></div>
         </div>

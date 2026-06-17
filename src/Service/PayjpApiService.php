@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Payjp\Service;
@@ -37,7 +38,7 @@ class PayjpApiService
      */
     public function __construct(?string $secretKey = null)
     {
-        $this->secretKey = $secretKey ?? (string)Configure::read('Payjp.secretKey');
+        $this->secretKey = $secretKey ?? (string)Configure::read('Payjp.secret');
     }
 
     /**
