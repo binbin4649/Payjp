@@ -4,11 +4,11 @@ declare(strict_types=1);
 namespace Payjp\Test\TestCase\Service;
 
 use Cake\TestSuite\TestCase;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use Payjp\Model\Entity\PayjpCharge;
 use Payjp\Model\Entity\PayjpUser;
 use Payjp\Service\PayjpApiService;
 use Payjp\Service\PayjpService;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use RuntimeException;
 
 /**
@@ -43,7 +43,7 @@ class PayjpServiceTest extends TestCase
     {
         $mock = $this->createMock(PayjpApiService::class);
         $mock->method('createCheckoutSession')->willReturn(
-            $overrides['createCheckoutSession'] ?? ['id' => 'cs_new_001', 'url' => 'https://checkout.pay.jp/cs_new_001']
+            $overrides['createCheckoutSession'] ?? ['id' => 'cs_new_001', 'url' => 'https://checkout.pay.jp/cs_new_001'],
         );
         $mock->method('getCheckoutSession')->willReturn(
             $overrides['getCheckoutSession'] ?? [
@@ -56,7 +56,7 @@ class PayjpServiceTest extends TestCase
                 'card_brand' => 'Visa',
                 'card_last4' => '4242',
                 'user_id' => 1,
-            ]
+            ],
         );
         $mock->method('createPaymentFlow')->willReturn(
             $overrides['createPaymentFlow'] ?? [
@@ -64,7 +64,7 @@ class PayjpServiceTest extends TestCase
                 'status' => 'succeeded',
                 'card_brand' => 'Visa',
                 'card_last4' => '4242',
-            ]
+            ],
         );
         $mock->method('deleteCustomer')->willReturn($overrides['deleteCustomer'] ?? true);
 
@@ -488,6 +488,50 @@ class PayjpServiceTest extends TestCase
         $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
         $this->assertSame($before, $after, '二重チャージしない');
         $this->assertSame($originalPointBookId, $this->payjpCharges()->get(1)->point_book_id);
+    }
+
+    // ============================================================
+    // handleWebhookById（event id を再取得して確定）
+    // ============================================================
+
+    public function testHandleWebhookById_refetchesEventAndConfirms(): void
+    {
+        // fixture charge id=2: user1 / pending / cs_test_002
+        $api = $this->apiSuccess();
+        $api->method('getEvent')->with('evnt_123')->willReturn([
+            'type' => 'checkout_session.completed',
+            'data' => [
+                'id' => 'cs_test_002',
+                'mode' => 'payment',
+                'status' => 'completed',
+                'payment_flow_id' => 'pf_confirmed_002',
+                'payment_method_id' => 'pm_confirmed_002',
+                'card_brand' => 'Visa',
+                'card_last4' => '4242',
+                'user_id' => 1,
+            ],
+        ]);
+        $service = new PayjpService($api);
+
+        $this->assertTrue($service->handleWebhookById('evnt_123'));
+        $this->assertSame('success', $this->payjpCharges()->get(2)->status);
+    }
+
+    public function testHandleWebhookById_getEventFalse_returnsFalse(): void
+    {
+        $api = $this->apiSuccess();
+        $api->method('getEvent')->willReturn(false);
+        $service = new PayjpService($api);
+
+        $this->assertFalse($service->handleWebhookById('evnt_missing'));
+    }
+
+    public function testHandleWebhookById_emptyId_returnsFalse(): void
+    {
+        $api = $this->apiSuccess();
+        $service = new PayjpService($api);
+
+        $this->assertFalse($service->handleWebhookById(''));
     }
 
     // ============================================================

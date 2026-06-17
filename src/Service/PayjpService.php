@@ -9,6 +9,8 @@ use Cake\ORM\TableRegistry;
 use Cake\Utility\Text;
 use Payjp\Model\Entity\PayjpCharge;
 use Payjp\Model\Entity\PayjpUser;
+use Payjp\Model\Table\PayjpChargesTable;
+use Payjp\Model\Table\PayjpUsersTable;
 use Point\Service\PointService;
 use Throwable;
 
@@ -26,12 +28,12 @@ class PayjpService
     /**
      * @var \Payjp\Model\Table\PayjpUsersTable
      */
-    private $payjpUsers;
+    private PayjpUsersTable $payjpUsers;
 
     /**
      * @var \Payjp\Model\Table\PayjpChargesTable
      */
-    private $payjpCharges;
+    private PayjpChargesTable $payjpCharges;
 
     /**
      * @param \Payjp\Service\PayjpApiService|null $api PAY.JP API ラッパー（テストでモック注入）。
@@ -164,7 +166,7 @@ class PayjpService
                 $amount,
                 (string)$user->payjp_customer_code,
                 (string)$user->payjp_payment_method_code,
-                $key
+                $key,
             );
         } catch (Throwable $e) {
             // 通信・処理例外 → status=failure
@@ -284,6 +286,28 @@ class PayjpService
         }
 
         return false;
+    }
+
+    /**
+     * Webhook の event id を受け、PAY.JP から正本を再取得して確定する。
+     *
+     * 生ペイロードは信用せず、getEvent() で再取得・正規化したイベントを handleWebhook() に委譲する。
+     * 二重確定は handleWebhook() / confirmChargeEntity() の冪等ガードが防ぐ。
+     *
+     * @param string $eventId PAY.JP イベント ID。
+     * @return bool 処理した場合 true。
+     */
+    public function handleWebhookById(string $eventId): bool
+    {
+        if ($eventId === '') {
+            return false;
+        }
+        $event = $this->api->getEvent($eventId);
+        if ($event === false) {
+            return false;
+        }
+
+        return $this->handleWebhook($event);
     }
 
     /**
@@ -452,7 +476,7 @@ class PayjpService
 
         $charge->status = 'failure';
         $charge->payjp_status = $data['status'] ?? null;
-        $charge->log = $data['failure_code'] ?? ('webhook failure: ' . $type);
+        $charge->log = $data['failure_code'] ?? 'webhook failure: ' . $type;
         $this->payjpCharges->save($charge);
 
         return true;

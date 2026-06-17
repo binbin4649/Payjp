@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace Payjp\Service;
@@ -8,14 +7,15 @@ use Cake\Core\Configure;
 use Cake\Log\Log;
 use PAYJPV2\Api\CheckoutSessionsApi;
 use PAYJPV2\Api\CustomersApi;
+use PAYJPV2\Api\EventsApi;
 use PAYJPV2\Api\PaymentFlowsApi;
 use PAYJPV2\Api\PaymentMethodsApi;
 use PAYJPV2\ApiException;
 use PAYJPV2\Configuration;
 use PAYJPV2\Model\CheckoutSessionCreateRequest;
 use PAYJPV2\Model\CheckoutSessionMode;
-use PAYJPV2\Model\CustomerCreation;
 use PAYJPV2\Model\Currency;
+use PAYJPV2\Model\CustomerCreation;
 use PAYJPV2\Model\LineItemRequest;
 use PAYJPV2\Model\PaymentFlowCreateRequest;
 use PAYJPV2\Model\PriceDataRequest;
@@ -132,6 +132,56 @@ class PayjpApiService
             ];
         } catch (Throwable $e) {
             Log::error('PayjpApiService::getCheckoutSession failed: ' . $e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
+     * Webhook イベントを PAY.JP から再取得し、handleWebhook が読める形に正規化する。
+     *
+     * 生 webhook ペイロードは event id だけを信用し、ここで正本（authoritative event）を再取得する
+     * ことを正当性検証の代替とする。Checkout Session 系イベントは object id（cs_...）から
+     * getCheckoutSession() を再取得して正規化を流用し、それ以外（PaymentFlow 系）は event の
+     * object をベストエフォートで最小正規化する。
+     *
+     * @param string $eventId PAY.JP イベント ID。
+     * @return array{type: string, data: array<string, mixed>}|false
+     */
+    public function getEvent(string $eventId): array|false
+    {
+        try {
+            $api = new EventsApi(null, $this->config());
+            $response = $api->getEvent($eventId);
+            $type = $response->getType();
+            $object = $response->getData();
+            $objectId = (string)($object['id'] ?? '');
+
+            // Checkout Session 系は正本を再取得し getCheckoutSession の正規化を流用する。
+            if (str_starts_with($objectId, 'cs_')) {
+                $data = $this->getCheckoutSession($objectId);
+                if ($data === false) {
+                    return false;
+                }
+            } else {
+                // PaymentFlow 等は event の object をそのまま最小正規化する。
+                $metadata = (array)($object['metadata'] ?? []);
+                $data = [
+                    'id' => $objectId,
+                    'status' => $object['status'] ?? null,
+                    'payment_flow_id' => $object['id'] ?? null,
+                    'customer_id' => $object['customer_id'] ?? ($object['customer'] ?? null),
+                    'payment_method_id' => $object['payment_method_id'] ?? null,
+                    'card_brand' => $object['card_brand'] ?? null,
+                    'card_last4' => $object['card_last4'] ?? null,
+                    'failure_code' => $object['failure_code'] ?? null,
+                    'user_id' => $metadata['user_id'] ?? null,
+                ];
+            }
+
+            return ['type' => $type, 'data' => $data];
+        } catch (Throwable $e) {
+            Log::error('PayjpApiService::getEvent failed: ' . $e->getMessage());
 
             return false;
         }
