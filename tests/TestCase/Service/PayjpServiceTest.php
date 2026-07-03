@@ -133,6 +133,21 @@ class PayjpServiceTest extends TestCase
         // 確定前：PaymentMethod 未保存・active ではない
         $this->assertEmpty($user->payjp_payment_method_code);
         $this->assertNotSame('active', $user->status);
+        $this->assertNull($user->auto_charge_point, 'point 未指定は NULL（実行時 amount と同額を加算）');
+    }
+
+    // 単体実行: composer test:payjp -- --filter testCreateSetupCheckout_withPointOption_recordsAutoChargePoint
+    public function testCreateSetupCheckout_withPointOption_recordsAutoChargePoint(): void
+    {
+        $api = $this->apiSuccess();
+        $service = new PayjpService($api);
+
+        $url = $service->createSetupCheckout(5, 6000, ['point' => 6100]);
+
+        $this->assertNotFalse($url);
+        $user = $this->payjpUsers()->find()->where(['user_id' => 5])->first();
+        $this->assertSame(6000, $user->auto_charge_amount);
+        $this->assertSame(6100, $user->auto_charge_point, 'ボーナス込みの加算ポイントを保存する');
     }
 
     public function testCreateSetupCheckout_apiReturnsFalse_returnsFalse(): void
@@ -175,7 +190,28 @@ class PayjpServiceTest extends TestCase
         $this->assertSame('pending', $charge->status);
         $this->assertSame('one_time', $charge->type);
         $this->assertSame(3000, $charge->amount);
+        $this->assertNull($charge->point, 'point 未指定は NULL（確定時 amount と同額を加算）');
         $this->assertNull($charge->point_book_id, '確定前は point_book_id NULL');
+    }
+
+    // 単体実行: composer test:payjp -- --filter testCreatePaymentCheckout_withPointOption_recordsPoint
+    public function testCreatePaymentCheckout_withPointOption_recordsPoint(): void
+    {
+        $api = $this->apiSuccess(['createCheckoutSession' => ['id' => 'cs_point_601', 'url' => 'https://checkout.pay.jp/cs_point_601']]);
+        $service = new PayjpService($api);
+
+        $url = $service->createPaymentCheckout(5, 6000, [
+            'point' => 6100,
+            'success_url' => 'https://example.com/payjp/charge/success',
+            'cancel_url' => 'https://example.com/payjp/charge/cancel',
+        ]);
+
+        $this->assertSame('https://checkout.pay.jp/cs_point_601', $url);
+
+        $charge = $this->payjpCharges()->find()->where(['payjp_checkout_session_code' => 'cs_point_601'])->first();
+        $this->assertNotNull($charge);
+        $this->assertSame(6000, $charge->amount);
+        $this->assertSame(6100, $charge->point, 'ボーナス込みの加算ポイントを保存する');
     }
 
     public function testCreatePaymentCheckout_apiReturnsFalse_returnsFalse(): void
@@ -228,6 +264,32 @@ class PayjpServiceTest extends TestCase
         // ポイント加算
         $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
         $this->assertSame($before + 10000, $after);
+    }
+
+    // 単体実行: composer test:payjp -- --filter testChargeAuto_withAutoChargePoint_chargesBonusPoint
+    public function testChargeAuto_withAutoChargePoint_chargesBonusPoint(): void
+    {
+        // ボーナス込みプラン（決済 6,000 円 → 6,100 PT）を登録した状態でオートチャージ実行
+        $user = $this->payjpUsers()->get(1);
+        $user->auto_charge_amount = 6000;
+        $user->auto_charge_point = 6100;
+        $this->payjpUsers()->save($user);
+
+        $api = $this->apiSuccess([
+            'createPaymentFlow' => ['id' => 'pf_auto_bonus', 'status' => 'succeeded'],
+        ]);
+        $service = new PayjpService($api);
+
+        $before = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+
+        $charge = $service->chargeAuto(1);
+
+        $this->assertInstanceOf(PayjpCharge::class, $charge);
+        $this->assertSame(6000, $charge->amount);
+        $this->assertSame(6100, $charge->point, 'payjp_charges にも加算ポイントを記録する');
+
+        $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+        $this->assertSame($before + 6100, $after, '決済金額ではなくボーナス込みポイントを加算する');
     }
 
     public function testChargeAuto_suspendedSuccess_recoversToActive(): void
@@ -499,6 +561,35 @@ class PayjpServiceTest extends TestCase
         $this->assertSame($before + 2000, $after);
     }
 
+    // 単体実行: composer test:payjp -- --filter testHandleWebhook_oneTimeSuccessWithPoint_chargesPointNotAmount
+    public function testHandleWebhook_oneTimeSuccessWithPoint_chargesPointNotAmount(): void
+    {
+        // point 指定付きの pending charge を作成（決済金額 6000 円 / 加算 6100 PT）
+        $api = $this->apiSuccess(['createCheckoutSession' => ['id' => 'cs_point_602', 'url' => 'https://checkout.pay.jp/cs_point_602']]);
+        $service = new PayjpService($api);
+        $service->createPaymentCheckout(1, 6000, ['point' => 6100]);
+
+        $before = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+
+        $event = [
+            'type' => 'payment_flow.succeeded',
+            'data' => [
+                'id' => 'cs_point_602',
+                'mode' => 'payment',
+                'status' => 'succeeded',
+                'payment_flow_id' => 'pf_point_602',
+            ],
+        ];
+        $this->assertTrue($service->handleWebhook($event));
+
+        $charge = $this->payjpCharges()->find()->where(['payjp_checkout_session_code' => 'cs_point_602'])->first();
+        $this->assertSame('success', $charge->status);
+        $this->assertNotNull($charge->point_book_id);
+
+        $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+        $this->assertSame($before + 6100, $after, '決済金額ではなく加算ポイント（ボーナス込み）を加算する');
+    }
+
     public function testHandleWebhook_setupSuccess_activatesUser(): void
     {
         // setup の 仮登録 を作ってから webhook で確定する（interim status を固定しない）
@@ -527,6 +618,38 @@ class PayjpServiceTest extends TestCase
         $this->assertSame('active', $user->status);
         $this->assertSame('pm_setup_900', $user->payjp_payment_method_code);
         $this->assertSame('cus_setup_900', $user->payjp_customer_code);
+    }
+
+    // 単体実行: composer test:payjp -- --filter testHandleWebhook_setupSuccess_deletesOtherRowsOfSameUser
+    public function testHandleWebhook_setupSuccess_deletesOtherRowsOfSameUser(): void
+    {
+        // カード変更シナリオ: user 1 は既に active 行（id=1）を持つ。
+        // 再 setup → 確定で新行が active になり、旧行は deleted になる（1ユーザー1有効カード）。
+        $api = $this->apiSuccess(['createCheckoutSession' => ['id' => 'cs_change_910', 'url' => 'https://checkout.pay.jp/cs_change_910']]);
+        $service = new PayjpService($api);
+        $service->createSetupCheckout(1, 6000, ['point' => 6100]);
+
+        $event = [
+            'type' => 'checkout_session.completed',
+            'data' => [
+                'id' => 'cs_change_910',
+                'mode' => 'setup',
+                'status' => 'completed',
+                'customer_id' => 'cus_change_910',
+                'payment_method_id' => 'pm_change_910',
+                'user_id' => 1,
+            ],
+        ];
+        $this->assertTrue($service->handleWebhook($event));
+
+        // 旧行（id=1）は deleted、新行が active
+        $this->assertSame('deleted', $this->payjpUsers()->get(1)->status, 'カード変更前の旧行は deleted 化');
+        $current = $this->payjpUsers()->find('currentByUser', userId: 1)->first();
+        $this->assertNotNull($current);
+        $this->assertNotSame(1, $current->id);
+        $this->assertSame('active', $current->status);
+        $this->assertSame('pm_change_910', $current->payjp_payment_method_code);
+        $this->assertSame(6100, $current->auto_charge_point);
     }
 
     public function testHandleWebhook_failureEvent_marksFailureWithLog(): void

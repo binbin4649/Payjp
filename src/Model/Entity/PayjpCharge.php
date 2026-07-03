@@ -18,6 +18,7 @@ use Member\Model\Entity\AppEntity;
  * @property string|null $payjp_payment_flow_code
  * @property string|null $payjp_payment_method_code
  * @property int $amount
+ * @property int|null $point
  * @property string|null $card_brand
  * @property string|null $card_last4
  * @property string|null $idempotency_key
@@ -62,6 +63,7 @@ class PayjpCharge extends AppEntity
         'payjp_payment_flow_code' => true,
         'payjp_payment_method_code' => true,
         'amount' => true,
+        'point' => true,
         'card_brand' => true,
         'card_last4' => true,
         'idempotency_key' => true,

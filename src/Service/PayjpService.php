@@ -59,7 +59,7 @@ class PayjpService
      *
      * @param int $userId 対象ユーザーID。
      * @param int $autoChargeAmount オートチャージ課金額（円）。
-     * @param array<string, mixed> $options success_url / cancel_url 等。
+     * @param array<string, mixed> $options success_url / cancel_url / point（オートチャージ実行時の加算ポイント。省略時は amount と同額）等。
      * @return string|false リダイレクト URL、失敗時 false。
      */
     public function createSetupCheckout(int $userId, int $autoChargeAmount, array $options = []): string|false
@@ -82,6 +82,9 @@ class PayjpService
                 'status' => 'inactive',
                 'type' => 'auto_charge',
                 'auto_charge_amount' => $autoChargeAmount,
+                // オートチャージ実行時の加算ポイント。メインアプリがボーナス込みプラン等で
+                // 決済金額と異なる値を指定できる。null は amount と同額を加算（後方互換）。
+                'auto_charge_point' => isset($options['point']) ? (int)$options['point'] : null,
             ]);
             if (!$this->payjpUsers->save($user)) {
                 return false;
@@ -100,7 +103,7 @@ class PayjpService
      *
      * @param int $userId 対象ユーザーID。
      * @param int $amount 課金額（円）。
-     * @param array<string, mixed> $options success_url / cancel_url 等。
+     * @param array<string, mixed> $options success_url / cancel_url / point（加算ポイント。省略時は amount と同額）等。
      * @return string|false リダイレクト URL、失敗時 false。
      */
     public function createPaymentCheckout(int $userId, int $amount, array $options = []): string|false
@@ -125,6 +128,9 @@ class PayjpService
                 'status' => 'pending',
                 'type' => 'one_time',
                 'amount' => $amount,
+                // 加算ポイント。メインアプリがボーナス付きプラン等で決済金額と異なる値を指定できる。
+                // null の場合は確定時に amount と同額を加算する（後方互換）。
+                'point' => isset($options['point']) ? (int)$options['point'] : null,
                 'payjp_checkout_session_code' => $result['id'],
                 'idempotency_key' => $key,
             ]);
@@ -180,6 +186,7 @@ class PayjpService
                 'status' => 'success',
                 'type' => 'auto_charge',
                 'amount' => $amount,
+                'point' => $user->auto_charge_point !== null ? (int)$user->auto_charge_point : null,
                 'payjp_status' => $result['status'],
                 'payjp_customer_code' => $user->payjp_customer_code,
                 'payjp_payment_flow_code' => $result['id'] ?? null,
@@ -190,7 +197,7 @@ class PayjpService
             ]);
             $this->payjpCharges->save($charge);
 
-            $pointBook = (new PointService())->charge($user->user_id, $amount, [
+            $pointBook = (new PointService())->charge($user->user_id, (int)($user->auto_charge_point ?? $amount), [
                 'app_name' => 'Payjp',
                 'charge_type' => 'payjp',
                 'foreign_model' => 'PayjpCharge',
@@ -254,7 +261,8 @@ class PayjpService
      */
     public function deleteCustomer(int $userId): PayjpUser|false
     {
-        $user = $this->payjpUsers->find()->where(['PayjpUsers.user_id' => $userId])->first();
+        // 現在の登録カード行を対象にする（複数行ある場合に旧行を拾わない）
+        $user = $this->payjpUsers->find('currentByUser', userId: $userId)->first();
         if ($user === null) {
             return false;
         }
@@ -431,7 +439,7 @@ class PayjpService
         }
         $this->payjpCharges->save($charge);
 
-        $pointBook = (new PointService())->charge((int)$charge->user_id, (int)$charge->amount, [
+        $pointBook = (new PointService())->charge((int)$charge->user_id, (int)($charge->point ?? $charge->amount), [
             'app_name' => 'Payjp',
             'charge_type' => 'payjp',
             'foreign_model' => 'PayjpCharge',
@@ -476,8 +484,23 @@ class PayjpService
             $user->card_last4 = $data['card_last4'];
         }
         $user->last_synced = new DateTime();
+        if (!$this->payjpUsers->save($user)) {
+            return false;
+        }
 
-        return (bool)$this->payjpUsers->save($user);
+        // 1ユーザー1有効カードの不変条件: 最新行の確定と同時に、同一ユーザーの他行
+        // （カード変更前の active 行・古い仮登録行等）を deleted 化する。
+        // 全 payjp_users 行を走査するオートチャージ処理での二重課金を防ぐ。
+        $this->payjpUsers->updateAll(
+            ['status' => 'deleted'],
+            [
+                'user_id' => (int)$userId,
+                'id !=' => $user->id,
+                'status !=' => 'deleted',
+            ],
+        );
+
+        return true;
     }
 
     /**

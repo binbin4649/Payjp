@@ -10,6 +10,7 @@ use Cake\Core\ContainerInterface;
 use Cake\Core\PluginApplicationInterface;
 use Cake\Http\MiddlewareQueue;
 use Cake\Routing\RouteBuilder;
+use Payjp\Service\PayjpService;
 
 /**
  * Plugin for Payjp
@@ -35,5 +36,10 @@ class PayjpPlugin extends BasePlugin
         return $commands;
     }
 
-    public function services(ContainerInterface $container): void {}
+    public function services(ContainerInterface $container): void
+    {
+        // Controller のメソッドインジェクション（例: Nos\Controller\PointsController::purchase(PayjpService $payjp)）
+        // を解決するために登録する。コンストラクタ引数はオプショナルのため引数定義は不要。
+        $container->add(PayjpService::class);
+    }
 }

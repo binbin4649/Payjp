@@ -157,4 +157,24 @@ class PayjpUsersTable extends AppTable
             'PayjpUsers.payjp_payment_method_code IS NOT' => null,
         ]);
     }
+
+    /**
+     * ユーザーの「現在の登録カード行」を取得するファインダー。
+     *
+     * カード登録済み（payjp_payment_method_code あり）かつ生存ステータス
+     * （active / suspended / inactive）の最新行。deleted（解除・カード変更前の旧行）、
+     * failure（登録失敗）、仮登録（pm 未保存）は対象外。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param int $userId 対象ユーザーID。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findCurrentByUser(SelectQuery $query, int $userId): SelectQuery
+    {
+        return $query->where([
+            'PayjpUsers.user_id' => $userId,
+            'PayjpUsers.status IN' => ['active', 'suspended', 'inactive'],
+            'PayjpUsers.payjp_payment_method_code IS NOT' => null,
+        ])->orderBy(['PayjpUsers.id' => 'DESC']);
+    }
 }

@@ -176,4 +176,52 @@ class PayjpUsersTableTest extends TestCase
         $results = $this->PayjpUsers->find('activeByUser', userId: 4)->toArray();
         $this->assertSame([], $results);
     }
+
+    // ---- findCurrentByUser ----
+
+    public function testFindCurrentByUser_includesActiveSuspendedInactiveWithPaymentMethod(): void
+    {
+        // user 1: active+pm / user 3: suspended+pm / user 4: inactive+pm → いずれも「現在の登録カード行」
+        foreach ([1, 3, 4] as $userId) {
+            $row = $this->PayjpUsers->find('currentByUser', userId: $userId)->first();
+            $this->assertNotNull($row, "user {$userId} は対象");
+            $this->assertNotEmpty($row->payjp_payment_method_code);
+        }
+    }
+
+    public function testFindCurrentByUser_excludesProvisionalWithoutPaymentMethod(): void
+    {
+        // user 2: active だが pm NULL（仮登録相当）→ 除外
+        $this->assertNull($this->PayjpUsers->find('currentByUser', userId: 2)->first());
+    }
+
+    public function testFindCurrentByUser_excludesDeletedAndFailure(): void
+    {
+        $row = $this->PayjpUsers->get(1);
+        foreach (['deleted', 'failure'] as $status) {
+            $row->status = $status;
+            $this->PayjpUsers->save($row);
+            $this->assertNull(
+                $this->PayjpUsers->find('currentByUser', userId: 1)->first(),
+                "{$status} は除外",
+            );
+        }
+    }
+
+    public function testFindCurrentByUser_returnsLatestRow(): void
+    {
+        // user 1 に新しい行（pm あり）を追加 → 最新行が返る
+        $new = $this->PayjpUsers->newEntity([
+            'user_id' => 1,
+            'status' => 'active',
+            'type' => 'auto_charge',
+            'auto_charge_amount' => 6000,
+            'payjp_customer_code' => 'cus_new_100',
+            'payjp_payment_method_code' => 'pm_new_100',
+        ]);
+        $this->PayjpUsers->save($new);
+
+        $row = $this->PayjpUsers->find('currentByUser', userId: 1)->first();
+        $this->assertSame($new->id, $row->id);
+    }
 }

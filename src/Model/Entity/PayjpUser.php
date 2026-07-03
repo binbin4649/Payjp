@@ -12,6 +12,7 @@ use Member\Model\Entity\AppEntity;
  * @property string $status
  * @property string $type
  * @property int|null $auto_charge_amount
+ * @property int|null $auto_charge_point
  * @property string|null $payjp_customer_code
  * @property string|null $payjp_payment_method_code
  * @property string|null $card_brand
@@ -52,6 +53,7 @@ class PayjpUser extends AppEntity
         'status' => true,
         'type' => true,
         'auto_charge_amount' => true,
+        'auto_charge_point' => true,
         'payjp_customer_code' => true,
         'payjp_payment_method_code' => true,
         'card_brand' => true,
