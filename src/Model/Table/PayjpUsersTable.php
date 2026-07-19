@@ -12,7 +12,7 @@ use Payjp\Model\Entity\PayjpUser;
 /**
  * PayjpUsers Model
  *
- * @property \Payjp\Model\Table\UsersTable&\Cake\ORM\Association\BelongsTo $Users
+ * @property \Member\Model\Table\UsersTable&\Cake\ORM\Association\BelongsTo $Users
  *
  * @method \Payjp\Model\Entity\PayjpUser newEmptyEntity()
  * @method \Payjp\Model\Entity\PayjpUser newEntity(array $data, array $options = [])
@@ -51,7 +51,7 @@ class PayjpUsersTable extends AppTable
         $this->belongsTo('Users', [
             'foreignKey' => 'user_id',
             'joinType' => 'INNER',
-            'className' => 'Payjp.Users',
+            'className' => 'Member.Users',
         ]);
     }
 

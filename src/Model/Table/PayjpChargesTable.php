@@ -12,8 +12,8 @@ use Payjp\Model\Entity\PayjpCharge;
 /**
  * PayjpCharges Model
  *
- * @property \Payjp\Model\Table\UsersTable&\Cake\ORM\Association\BelongsTo $Users
- * @property \Payjp\Model\Table\PointBooksTable&\Cake\ORM\Association\BelongsTo $PointBooks
+ * @property \Member\Model\Table\UsersTable&\Cake\ORM\Association\BelongsTo $Users
+ * @property \Point\Model\Table\PointBooksTable&\Cake\ORM\Association\BelongsTo $PointBooks
  *
  * @method \Payjp\Model\Entity\PayjpCharge newEmptyEntity()
  * @method \Payjp\Model\Entity\PayjpCharge newEntity(array $data, array $options = [])
@@ -52,12 +52,12 @@ class PayjpChargesTable extends AppTable
         $this->belongsTo('Users', [
             'foreignKey' => 'user_id',
             'joinType' => 'INNER',
-            'className' => 'Payjp.Users',
+            'className' => 'Member.Users',
         ]);
         $this->belongsTo('PointBooks', [
             'foreignKey' => 'point_book_id',
             'joinType' => 'INNER',
-            'className' => 'Payjp.PointBooks',
+            'className' => 'Point.PointBooks',
         ]);
     }
 
