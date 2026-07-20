@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Payjp\Test\TestCase\Model\Table;
 
+use Cake\I18n\Date;
 use Cake\TestSuite\TestCase;
 use Payjp\Model\Table\PayjpUsersTable;
 
@@ -110,6 +111,26 @@ class PayjpUsersTableTest extends TestCase
     {
         $entity = $this->PayjpUsers->newEntity($this->validData(['auto_charge_amount' => 'abc']));
         $this->assertNotEmpty($entity->getError('auto_charge_amount'));
+    }
+
+    // ---- validationDefault: card_deadline ----
+
+    public function testValidation_cardDeadline_allowsEmpty(): void
+    {
+        $entity = $this->PayjpUsers->newEntity($this->validData(['card_deadline' => null]));
+        $this->assertEmpty($entity->getError('card_deadline'));
+    }
+
+    public function testValidation_cardDeadline_acceptsDate(): void
+    {
+        $entity = $this->PayjpUsers->newEntity($this->validData(['card_deadline' => '2027-03-31']));
+        $this->assertEmpty($entity->getError('card_deadline'));
+    }
+
+    public function testValidation_cardDeadline_invalidValue(): void
+    {
+        $entity = $this->PayjpUsers->newEntity($this->validData(['card_deadline' => 'not-a-date']));
+        $this->assertNotEmpty($entity->getError('card_deadline'));
     }
 
     // ---- buildRules: user_id existsIn ----
@@ -223,5 +244,55 @@ class PayjpUsersTableTest extends TestCase
 
         $row = $this->PayjpUsers->find('currentByUser', userId: 1)->first();
         $this->assertSame($new->id, $row->id);
+    }
+
+    // ---- findExpiringInMonth ----
+
+    /**
+     * fixture 行に card_deadline を設定するヘルパー。
+     */
+    private function setCardDeadline(int $id, ?string $deadline): void
+    {
+        $row = $this->PayjpUsers->get($id);
+        $row->card_deadline = $deadline === null ? null : Date::parse($deadline);
+        $this->PayjpUsers->save($row);
+    }
+
+    public function testFindExpiringInMonth_includesDeadlineWithinMonth(): void
+    {
+        // user 1: active+pm。当該月の末日ちょうど → hit
+        $this->setCardDeadline(1, '2027-03-31');
+
+        $results = $this->PayjpUsers->find('expiringInMonth', month: Date::parse('2027-03-15'))->toArray();
+        $this->assertCount(1, $results);
+        $this->assertSame(1, $results[0]->id);
+    }
+
+    public function testFindExpiringInMonth_excludesPreviousAndNextMonth(): void
+    {
+        // 前月末日 / 翌月1日 は範囲外
+        foreach (['2027-02-28', '2027-04-01'] as $deadline) {
+            $this->setCardDeadline(1, $deadline);
+            $results = $this->PayjpUsers->find('expiringInMonth', month: Date::parse('2027-03-15'))->toArray();
+            $this->assertSame([], $results, "card_deadline={$deadline} は 2027-03 の対象外");
+        }
+    }
+
+    public function testFindExpiringInMonth_excludesNullDeadline(): void
+    {
+        // fixture 全行 card_deadline NULL → 空
+        $results = $this->PayjpUsers->find('expiringInMonth', month: Date::parse('2027-03-15'))->toArray();
+        $this->assertSame([], $results);
+    }
+
+    public function testFindExpiringInMonth_excludesNonActiveOrNoPaymentMethod(): void
+    {
+        // user 2: active だが pm NULL / user 3: suspended / user 4: inactive → いずれも除外
+        foreach ([2, 3, 4] as $id) {
+            $this->setCardDeadline($id, '2027-03-31');
+        }
+
+        $results = $this->PayjpUsers->find('expiringInMonth', month: Date::parse('2027-03-15'))->toArray();
+        $this->assertSame([], $results);
     }
 }

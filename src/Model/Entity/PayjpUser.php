@@ -17,6 +17,7 @@ use Member\Model\Entity\AppEntity;
  * @property string|null $payjp_payment_method_code
  * @property string|null $card_brand
  * @property string|null $card_last4
+ * @property \Cake\I18n\Date|null $card_deadline
  * @property \Cake\I18n\DateTime|null $last_synced
  * @property string|null $log
  * @property \Cake\I18n\DateTime $created
@@ -58,6 +59,7 @@ class PayjpUser extends AppEntity
         'payjp_payment_method_code' => true,
         'card_brand' => true,
         'card_last4' => true,
+        'card_deadline' => true,
         'last_synced' => true,
         'log' => true,
         'created' => true,

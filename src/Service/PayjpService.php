@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Payjp\Service;
 
+use Cake\I18n\Date;
 use Cake\I18n\DateTime;
 use Cake\Log\Log;
 use Cake\ORM\TableRegistry;
@@ -291,6 +292,97 @@ class PayjpService
     }
 
     /**
+     * 当月（または指定月）にカード有効期限を迎えるユーザーへ期限切れ予告メールを送る。
+     *
+     * cron 起動の CardDeadlineCommand から呼び出す想定。実行前に card_deadline 未保存の
+     * 既存行を PAY.JP から補完（バックフィル）してから抽出する。送信済みガードは
+     * change_logs（model_name=Users, action=card_deadline, created >= 対象月1日）で行い、
+     * 同月内の再送を防ぐ。送信は Member の EmailTemplate（mail_type=card_deadline）を使用し、
+     * 送信後に ChangeLogsTable::commonLog で記録する。1ユーザーの失敗は他ユーザーへ波及させない。
+     *
+     * @param \Cake\I18n\Date|null $targetMonth 対象月（月内の任意の日付。省略時は当月）。
+     * @return array{sent: int, skipped: int, failed: int}
+     */
+    public function notifyCardDeadline(?Date $targetMonth = null): array
+    {
+        $targetMonth = $targetMonth ?? Date::today();
+        $result = ['sent' => 0, 'skipped' => 0, 'failed' => 0];
+
+        $this->backfillCardDeadline();
+
+        $locator = TableRegistry::getTableLocator();
+        $emailTemplate = $locator->get('Member.EmailTemplates')->getByMailType('card_deadline');
+        if ($emailTemplate === null) {
+            Log::warning('PayjpService::notifyCardDeadline skipped: mail_type=card_deadline の有効なテンプレートがありません');
+
+            return $result;
+        }
+
+        $messages = $locator->get('Member.Messages');
+        $changeLogs = $locator->get('Member.ChangeLogs');
+        $monthStart = new DateTime($targetMonth->firstOfMonth()->format('Y-m-d 00:00:00'));
+
+        $rows = $this->payjpUsers->find('expiringInMonth', month: $targetMonth)->contain(['Users'])->all();
+        foreach ($rows as $row) {
+            try {
+                if (empty($row->user->email)) {
+                    $result['skipped']++;
+                    continue;
+                }
+                $notified = $changeLogs->exists([
+                    'ChangeLogs.model_name' => 'Users',
+                    'ChangeLogs.record_id' => (int)$row->user_id,
+                    'ChangeLogs.action' => 'card_deadline',
+                    'ChangeLogs.created >=' => $monthStart,
+                ]);
+                if ($notified) {
+                    $result['skipped']++;
+                    continue;
+                }
+                $messages->sendMailRightNow($row->user, $emailTemplate->id);
+                $changeLogs->commonLog('Users', (int)$row->user_id, 'card_deadline');
+                $result['sent']++;
+            } catch (Throwable $e) {
+                Log::error(sprintf(
+                    'PayjpService::notifyCardDeadline failed (user_id=%s): %s',
+                    $row->user_id,
+                    $e->getMessage(),
+                ));
+                $result['failed']++;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * card_deadline 未保存の既存行を PAY.JP の PaymentMethod 情報から補完する。
+     *
+     * card_deadline カラム追加以前に登録されたカードを通知対象に含めるための自己回復処理。
+     * 取得失敗（API エラー・exp 未設定）は cardDeadline() 内で warning ログ済みのためスキップする。
+     *
+     * @return void
+     */
+    private function backfillCardDeadline(): void
+    {
+        $rows = $this->payjpUsers->find()
+            ->where([
+                'PayjpUsers.status' => 'active',
+                'PayjpUsers.payjp_payment_method_code IS NOT' => null,
+                'PayjpUsers.card_deadline IS' => null,
+            ])
+            ->all();
+        foreach ($rows as $row) {
+            $deadline = $this->api->cardDeadline((string)$row->payjp_payment_method_code);
+            if ($deadline === null) {
+                continue;
+            }
+            $row->card_deadline = $deadline;
+            $this->payjpUsers->save($row);
+        }
+    }
+
+    /**
      * PAY.JP の webhook イベントを受けて payjp_charges / payjp_users を確定する。
      *
      * @param array<string, mixed> $event PAY.JP webhook イベント。
@@ -482,6 +574,9 @@ class PayjpService
         }
         if (isset($data['card_last4'])) {
             $user->card_last4 = $data['card_last4'];
+        }
+        if (isset($data['card_deadline'])) {
+            $user->card_deadline = $data['card_deadline'];
         }
         $user->last_synced = new DateTime();
         if (!$this->payjpUsers->save($user)) {

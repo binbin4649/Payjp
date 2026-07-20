@@ -6,6 +6,9 @@ namespace Payjp\Test\TestCase\Service;
 
 use Cake\TestSuite\TestCase;
 use Cake\Core\Configure;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use Member\Model\Entity\Message;
 use Payjp\Model\Entity\PayjpCharge;
 use Payjp\Model\Entity\PayjpUser;
 use Payjp\Service\PayjpApiService;
@@ -36,6 +39,8 @@ class PayjpServiceTest extends TestCase
         'plugin.Payjp.Companies',
         'plugin.Payjp.PointBooks',
         'plugin.Payjp.PointUsers',
+        'plugin.Payjp.EmailTemplates',
+        'plugin.Payjp.ChangeLogs',
     ];
 
     /**
@@ -844,6 +849,246 @@ class PayjpServiceTest extends TestCase
         $service = new PayjpService($api);
 
         $this->assertFalse($service->completeCheckout('cs_test_002'));
+    }
+
+    // ============================================================
+    // confirmSetup: card_deadline 保存
+    // ============================================================
+
+    public function testHandleWebhook_setupSuccess_savesCardDeadline(): void
+    {
+        $api = $this->apiSuccess(['createCheckoutSession' => ['id' => 'cs_setup_920', 'url' => 'https://checkout.pay.jp/cs_setup_920']]);
+        $service = new PayjpService($api);
+        $service->createSetupCheckout(5, 9000, []);
+
+        $event = [
+            'type' => 'checkout_session.completed',
+            'data' => [
+                'id' => 'cs_setup_920',
+                'mode' => 'setup',
+                'status' => 'completed',
+                'customer_id' => 'cus_setup_920',
+                'payment_method_id' => 'pm_setup_920',
+                'card_brand' => 'Visa',
+                'card_last4' => '4242',
+                'card_deadline' => Date::parse('2027-03-31'),
+                'user_id' => 5,
+            ],
+        ];
+        $this->assertTrue($service->handleWebhook($event));
+
+        $user = $this->payjpUsers()->find()->where(['user_id' => 5])->first();
+        $this->assertSame('active', $user->status);
+        $this->assertSame('2027-03-31', $user->card_deadline?->format('Y-m-d'), '有効期限月の末日を保存する');
+    }
+
+    public function testHandleWebhook_setupSuccess_withoutCardDeadline_keepsNull(): void
+    {
+        $api = $this->apiSuccess(['createCheckoutSession' => ['id' => 'cs_setup_930', 'url' => 'https://checkout.pay.jp/cs_setup_930']]);
+        $service = new PayjpService($api);
+        $service->createSetupCheckout(5, 9000, []);
+
+        $event = [
+            'type' => 'checkout_session.completed',
+            'data' => [
+                'id' => 'cs_setup_930',
+                'mode' => 'setup',
+                'status' => 'completed',
+                'customer_id' => 'cus_setup_930',
+                'payment_method_id' => 'pm_setup_930',
+                'user_id' => 5,
+            ],
+        ];
+        $this->assertTrue($service->handleWebhook($event));
+
+        $user = $this->payjpUsers()->find()->where(['user_id' => 5])->first();
+        $this->assertNull($user->card_deadline, '取得できなかった場合は NULL のまま');
+    }
+
+    // ============================================================
+    // notifyCardDeadline（カード有効期限切れ通知）
+    // ============================================================
+
+    private function changeLogs()
+    {
+        return $this->getTableLocator()->get('Member.ChangeLogs');
+    }
+
+    /**
+     * payjp_users 行に card_deadline を設定する。
+     */
+    private function setCardDeadline(int $id, ?Date $deadline): void
+    {
+        $row = $this->payjpUsers()->get($id);
+        $row->card_deadline = $deadline;
+        $this->payjpUsers()->save($row);
+    }
+
+    /**
+     * change_logs に action=card_deadline のログが存在するか。
+     */
+    private function cardDeadlineLogExists(int $userId): bool
+    {
+        return $this->changeLogs()->exists([
+            'model_name' => 'Users',
+            'record_id' => $userId,
+            'action' => 'card_deadline',
+        ]);
+    }
+
+    // 単体実行: composer test:payjp -- --filter testNotifyCardDeadline_sendsAndLogsChangeLog
+    public function testNotifyCardDeadline_sendsAndLogsChangeLog(): void
+    {
+        // user 1: active+pm+当月末期限 → 送信対象
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->once())->method('sendMailRightNow')->willReturn(new Message());
+
+        $service = new PayjpService($this->apiSuccess());
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 1, 'skipped' => 0, 'failed' => 0], $result);
+        $this->assertTrue($this->cardDeadlineLogExists(1), '送信後に change_logs へ記録する');
+    }
+
+    public function testNotifyCardDeadline_secondRunSameMonth_skips(): void
+    {
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->once())->method('sendMailRightNow')->willReturn(new Message());
+
+        $service = new PayjpService($this->apiSuccess());
+        $first = $service->notifyCardDeadline();
+        $second = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 1, 'skipped' => 0, 'failed' => 0], $first);
+        $this->assertSame(['sent' => 0, 'skipped' => 1, 'failed' => 0], $second, '同月内は再送しない');
+    }
+
+    public function testNotifyCardDeadline_previousMonthLog_sendsAgain(): void
+    {
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        // 前月に送信済みのログ（例: 前月に期限を迎える別カードへの通知）は当月ガードに影響しない
+        $prev = new DateTime(Date::today()->firstOfMonth()->format('Y-m-d 00:00:00'));
+        $prev = $prev->modify('-1 day');
+        $log = $this->changeLogs()->newEmptyEntity();
+        $log->model_name = 'Users';
+        $log->record_id = 1;
+        $log->action = 'card_deadline';
+        $log->user_id = 1;
+        $log->created = $prev;
+        $log->modified = $prev;
+        $this->changeLogs()->save($log);
+
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->once())->method('sendMailRightNow')->willReturn(new Message());
+
+        $service = new PayjpService($this->apiSuccess());
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 1, 'skipped' => 0, 'failed' => 0], $result);
+    }
+
+    public function testNotifyCardDeadline_oneUserFails_othersStillSent(): void
+    {
+        // user 1 / user 2 の両方を送信対象にする（user 2 は pm を付与）
+        $row2 = $this->payjpUsers()->get(2);
+        $row2->payjp_payment_method_code = 'pm_test_2';
+        $this->payjpUsers()->save($row2);
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        $this->setCardDeadline(2, Date::today()->lastOfMonth());
+
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->method('sendMailRightNow')->willReturnCallback(function ($user) {
+            if ($user->id === 1) {
+                throw new RuntimeException('send error');
+            }
+
+            return new Message();
+        });
+
+        $service = new PayjpService($this->apiSuccess());
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 1, 'skipped' => 0, 'failed' => 1], $result, '1ユーザーの失敗は他ユーザーへ波及させない');
+        $this->assertFalse($this->cardDeadlineLogExists(1), '失敗ユーザーは記録しない（翌実行で再送）');
+        $this->assertTrue($this->cardDeadlineLogExists(2));
+    }
+
+    public function testNotifyCardDeadline_noActiveTemplate_returnsZeros(): void
+    {
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        $this->getTableLocator()->get('Member.EmailTemplates')->deleteAll([]);
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->never())->method('sendMailRightNow');
+
+        $service = new PayjpService($this->apiSuccess());
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 0, 'skipped' => 0, 'failed' => 0], $result, 'テンプレート未登録アプリでは no-op');
+    }
+
+    public function testNotifyCardDeadline_emptyEmail_skips(): void
+    {
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        $this->getTableLocator()->get('Member.Users')->updateAll(['email' => ''], ['id' => 1]);
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->never())->method('sendMailRightNow');
+
+        $service = new PayjpService($this->apiSuccess());
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 0, 'skipped' => 1, 'failed' => 0], $result);
+        $this->assertFalse($this->cardDeadlineLogExists(1));
+    }
+
+    public function testNotifyCardDeadline_targetMonthWithoutExpiring_sendsNothing(): void
+    {
+        // 期限は当月だが、対象月として翌月を指定 → 対象外
+        $this->setCardDeadline(1, Date::today()->lastOfMonth());
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->never())->method('sendMailRightNow');
+
+        $service = new PayjpService($this->apiSuccess());
+        $result = $service->notifyCardDeadline(Date::today()->addMonths(1));
+
+        $this->assertSame(['sent' => 0, 'skipped' => 0, 'failed' => 0], $result);
+    }
+
+    // 単体実行: composer test:payjp -- --filter testNotifyCardDeadline_backfillsNullDeadlineFromApi
+    public function testNotifyCardDeadline_backfillsNullDeadlineFromApi(): void
+    {
+        // user 1: active+pm だが card_deadline NULL（既存レコード相当）→ PAY.JP から補完して送信対象に含める
+        $api = $this->apiSuccess();
+        $api->method('cardDeadline')->with('pm_test_1')->willReturn(Date::today()->lastOfMonth());
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->once())->method('sendMailRightNow')->willReturn(new Message());
+
+        $service = new PayjpService($api);
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 1, 'skipped' => 0, 'failed' => 0], $result);
+        $user = $this->payjpUsers()->get(1);
+        $this->assertSame(
+            Date::today()->lastOfMonth()->format('Y-m-d'),
+            $user->card_deadline?->format('Y-m-d'),
+            'バックフィルで card_deadline が保存される',
+        );
+    }
+
+    public function testNotifyCardDeadline_backfillApiReturnsNull_skipsRow(): void
+    {
+        // 補完失敗（API エラー・exp 未設定）は NULL のまま → 通知対象外のまま続行
+        $api = $this->apiSuccess();
+        $api->method('cardDeadline')->willReturn(null);
+        $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
+        $messages->expects($this->never())->method('sendMailRightNow');
+
+        $service = new PayjpService($api);
+        $result = $service->notifyCardDeadline();
+
+        $this->assertSame(['sent' => 0, 'skipped' => 0, 'failed' => 0], $result);
+        $this->assertNull($this->payjpUsers()->get(1)->card_deadline);
     }
 
     // ============================================================

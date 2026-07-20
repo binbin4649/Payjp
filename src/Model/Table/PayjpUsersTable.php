@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Payjp\Model\Table;
 
+use Cake\I18n\Date;
 use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\Validation\Validator;
@@ -106,6 +107,10 @@ class PayjpUsersTable extends AppTable
             ->allowEmptyString('card_last4');
 
         $validator
+            ->date('card_deadline')
+            ->allowEmptyDate('card_deadline');
+
+        $validator
             ->dateTime('last_synced')
             ->allowEmptyDateTime('last_synced');
 
@@ -176,5 +181,24 @@ class PayjpUsersTable extends AppTable
             'PayjpUsers.status IN' => ['active', 'suspended', 'inactive'],
             'PayjpUsers.payjp_payment_method_code IS NOT' => null,
         ])->orderBy(['PayjpUsers.id' => 'DESC']);
+    }
+
+    /**
+     * 指定月にカード有効期限（card_deadline）を迎える行を取得するファインダー。
+     *
+     * 通知対象は status=active かつ PaymentMethod 登録済みの行のみ。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param \Cake\I18n\Date $month 対象月（月内の任意の日付。1日〜末日の範囲で判定）。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findExpiringInMonth(SelectQuery $query, Date $month): SelectQuery
+    {
+        return $query->where([
+            'PayjpUsers.status' => 'active',
+            'PayjpUsers.payjp_payment_method_code IS NOT' => null,
+            'PayjpUsers.card_deadline >=' => $month->firstOfMonth(),
+            'PayjpUsers.card_deadline <=' => $month->lastOfMonth(),
+        ]);
     }
 }

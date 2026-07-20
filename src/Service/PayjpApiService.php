@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Payjp\Service;
 
 use Cake\Core\Configure;
+use Cake\I18n\Date;
 use Cake\Log\Log;
 use PAYJPV2\Api\CheckoutSessionsApi;
 use PAYJPV2\Api\CustomersApi;
@@ -116,7 +117,7 @@ class PayjpApiService
             $response = $api->getCheckoutSession($sessionId);
             $metadata = $response->getMetadata();
             $paymentMethodId = method_exists($response, 'getPaymentMethodId') ? $response->getPaymentMethodId() : null;
-            [$cardBrand, $cardLast4] = $this->cardDetails($paymentMethodId);
+            [$cardBrand, $cardLast4, $cardDeadline] = $this->cardDetails($paymentMethodId);
 
             return [
                 'id' => $response->getId(),
@@ -128,6 +129,7 @@ class PayjpApiService
                 'payment_method_id' => $paymentMethodId,
                 'card_brand' => $cardBrand,
                 'card_last4' => $cardLast4,
+                'card_deadline' => $cardDeadline,
                 'user_id' => $metadata['user_id'] ?? null,
             ];
         } catch (Throwable $e) {
@@ -174,6 +176,7 @@ class PayjpApiService
                     'payment_method_id' => $object['payment_method_id'] ?? null,
                     'card_brand' => $object['card_brand'] ?? null,
                     'card_last4' => $object['card_last4'] ?? null,
+                    'card_deadline' => $object['card_deadline'] ?? null,
                     'failure_code' => $object['failure_code'] ?? null,
                     'user_id' => $metadata['user_id'] ?? null,
                 ];
@@ -210,7 +213,7 @@ class PayjpApiService
             $response = $api->createPaymentFlow($request, $idempotencyKey);
 
             $paymentMethodId = $response->getPaymentMethodId();
-            [$cardBrand, $cardLast4] = $this->cardDetails($paymentMethodId);
+            [$cardBrand, $cardLast4, $cardDeadline] = $this->cardDetails($paymentMethodId);
 
             return [
                 'id' => $response->getId(),
@@ -218,6 +221,7 @@ class PayjpApiService
                 'payment_method_id' => $paymentMethodId,
                 'card_brand' => $cardBrand,
                 'card_last4' => $cardLast4,
+                'card_deadline' => $cardDeadline,
             ];
         } catch (ApiException $e) {
             // カード拒否・パラメータ不正（4xx）は「決済失敗」として扱い、ステータス遷移に委ねる。
@@ -232,6 +236,7 @@ class PayjpApiService
                     'payment_method_id' => null,
                     'card_brand' => null,
                     'card_last4' => null,
+                    'card_deadline' => null,
                 ];
             }
             Log::error('PayjpApiService::createPaymentFlow failed: ' . $e->getMessage());
@@ -255,25 +260,51 @@ class PayjpApiService
     }
 
     /**
-     * PaymentMethod のカードブランド・下4桁をベストエフォートで取得する。
+     * PaymentMethod のカード有効期限（有効期限月の末日）をベストエフォートで取得する。
+     *
+     * card_deadline 未保存の既存行のバックフィル用公開ラッパー。
+     *
+     * @param string $paymentMethodId PaymentMethod ID。
+     * @return \Cake\I18n\Date|null
+     */
+    public function cardDeadline(string $paymentMethodId): ?Date
+    {
+        [, , $cardDeadline] = $this->cardDetails($paymentMethodId);
+
+        return $cardDeadline;
+    }
+
+    /**
+     * PaymentMethod のカードブランド・下4桁・有効期限をベストエフォートで取得する。
+     *
+     * 有効期限は有効期限月の末日（Date）。exp_month / exp_year が未設定の場合は
+     * 有効期限のみ null とし、ブランド・下4桁は返す。
      *
      * @param string|null $paymentMethodId PaymentMethod ID。
-     * @return array{0: ?string, 1: ?string}
+     * @return array{0: ?string, 1: ?string, 2: ?\Cake\I18n\Date}
      */
     private function cardDetails(?string $paymentMethodId): array
     {
         if (empty($paymentMethodId)) {
-            return [null, null];
+            return [null, null, null];
         }
         try {
             $api = new PaymentMethodsApi(null, $this->config());
             $card = $api->getPaymentMethod($paymentMethodId)->getCard();
 
-            return [$card->getBrand(), $card->getLast4()];
+            $cardDeadline = null;
+            try {
+                $cardDeadline = Date::create($card->getExpYear(), $card->getExpMonth(), 1)->lastOfMonth();
+            } catch (Throwable $e) {
+                // exp_month / exp_year 未設定（SDK は LogicException を投げる）は有効期限のみ null とする。
+                Log::warning('PayjpApiService::cardDetails exp unavailable: ' . $e->getMessage());
+            }
+
+            return [$card->getBrand(), $card->getLast4(), $cardDeadline];
         } catch (Throwable $e) {
             Log::warning('PayjpApiService::cardDetails failed: ' . $e->getMessage());
 
-            return [null, null];
+            return [null, null, null];
         }
     }
 }
