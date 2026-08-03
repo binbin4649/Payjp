@@ -121,7 +121,15 @@ class PayjpServiceTest extends TestCase
 
     public function testCreateSetupCheckout_success_returnsUrlAndProvisionsUser(): void
     {
-        $api = $this->apiSuccess();
+        // fixture user 5 の email（test5@example.com）が customer_email として渡る。
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->once())
+            ->method('createCheckoutSession')
+            ->with($this->callback(
+                fn(array $params) => ($params['mode'] ?? null) === 'setup'
+                    && ($params['customer_email'] ?? null) === 'test5@example.com',
+            ))
+            ->willReturn(['id' => 'cs_new_001', 'url' => 'https://checkout.pay.jp/cs_new_001']);
         $service = new PayjpService($api);
 
         $url = $service->createSetupCheckout(5, 12000, [
@@ -180,7 +188,16 @@ class PayjpServiceTest extends TestCase
 
     public function testCreatePaymentCheckout_success_returnsUrlAndRecordsPending(): void
     {
-        $api = $this->apiSuccess(['createCheckoutSession' => ['id' => 'cs_pay_777', 'url' => 'https://checkout.pay.jp/cs_pay_777']]);
+        // fixture user 5 の email（test5@example.com）が customer_email として渡る。
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->once())
+            ->method('createCheckoutSession')
+            ->with($this->callback(
+                fn(array $params) => ($params['mode'] ?? null) === 'payment'
+                    && ($params['amount'] ?? null) === 3000
+                    && ($params['customer_email'] ?? null) === 'test5@example.com',
+            ))
+            ->willReturn(['id' => 'cs_pay_777', 'url' => 'https://checkout.pay.jp/cs_pay_777']);
         $service = new PayjpService($api);
 
         $url = $service->createPaymentCheckout(5, 3000, [

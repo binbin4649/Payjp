@@ -53,7 +53,7 @@ class PayjpApiService
     /**
      * Checkout Session を作成し、リダイレクト URL とセッション ID を返す。
      *
-     * @param array<string, mixed> $params mode(setup|payment) / amount / success_url / cancel_url / user_id 等。
+     * @param array<string, mixed> $params mode(setup|payment) / amount / success_url / cancel_url / customer_email / user_id 等。
      * @return array{id: string, url: string}|false
      */
     public function createCheckoutSession(array $params): array|false
@@ -67,6 +67,9 @@ class PayjpApiService
             }
             if (!empty($params['cancel_url'])) {
                 $request->setCancelUrl((string)$params['cancel_url']);
+            }
+            if (!empty($params['customer_email'])) {
+                $request->setCustomerEmail((string)$params['customer_email']);
             }
             if (isset($params['user_id'])) {
                 $request->setMetadata(['user_id' => (string)$params['user_id']]);

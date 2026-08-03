@@ -66,13 +66,18 @@ class PayjpService
     public function createSetupCheckout(int $userId, int $autoChargeAmount, array $options = []): string|false
     {
         try {
-            $result = $this->api->createCheckoutSession([
+            $sessionParams = [
                 'mode' => 'setup',
                 'user_id' => $userId,
                 'success_url' => $options['success_url'] ?? null,
                 'cancel_url' => $options['cancel_url'] ?? null,
                 'idempotency_key' => $this->generateIdempotencyKey(),
-            ]);
+            ];
+            $email = $this->userEmail($userId);
+            if ($email !== null) {
+                $sessionParams['customer_email'] = $email;
+            }
+            $result = $this->api->createCheckoutSession($sessionParams);
             if ($result === false) {
                 return false;
             }
@@ -111,14 +116,19 @@ class PayjpService
     {
         try {
             $key = $this->generateIdempotencyKey();
-            $result = $this->api->createCheckoutSession([
+            $sessionParams = [
                 'mode' => 'payment',
                 'amount' => $amount,
                 'user_id' => $userId,
                 'success_url' => $options['success_url'] ?? null,
                 'cancel_url' => $options['cancel_url'] ?? null,
                 'idempotency_key' => $key,
-            ]);
+            ];
+            $email = $this->userEmail($userId);
+            if ($email !== null) {
+                $sessionParams['customer_email'] = $email;
+            }
+            $result = $this->api->createCheckoutSession($sessionParams);
             if ($result === false) {
                 return false;
             }
@@ -684,5 +694,24 @@ class PayjpService
             ->where(['PayjpUsers.user_id' => $userId])
             ->orderBy(['PayjpUsers.id' => 'DESC'])
             ->first();
+    }
+
+    /**
+     * Member.Users から Checkout 用のメールアドレスを取得する。
+     * 未登録・空文字の場合は null（customer_email を送らず PAY.JP 側入力に任せる）。
+     *
+     * @param int $userId 対象ユーザーID。
+     * @return string|null
+     */
+    private function userEmail(int $userId): ?string
+    {
+        try {
+            $user = TableRegistry::getTableLocator()->get('Member.Users')->get($userId);
+        } catch (Throwable $e) {
+            return null;
+        }
+        $email = trim((string)($user->email ?? ''));
+
+        return $email !== '' ? $email : null;
     }
 }
