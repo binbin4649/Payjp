@@ -60,22 +60,31 @@ class PayjpService
      *
      * @param int $userId 対象ユーザーID。
      * @param int $autoChargeAmount オートチャージ課金額（円）。
-     * @param array<string, mixed> $options success_url / cancel_url / point（オートチャージ実行時の加算ポイント。省略時は amount と同額）等。
+     * @param array<string, mixed> $options success_url / cancel_url / point（オートチャージ実行時の加算ポイント。省略時は amount と同額）/ payment_method_types（['card'] 等。省略時は未送信）等。
      * @return string|false リダイレクト URL、失敗時 false。
      */
     public function createSetupCheckout(int $userId, int $autoChargeAmount, array $options = []): string|false
     {
         try {
+            $email = $this->userEmail($userId);
+            $customerId = $this->resolveSetupCustomerId($userId, $email);
+            if ($customerId === false) {
+                return false;
+            }
+
             $sessionParams = [
                 'mode' => 'setup',
                 'user_id' => $userId,
+                'customer_id' => $customerId,
                 'success_url' => $options['success_url'] ?? null,
                 'cancel_url' => $options['cancel_url'] ?? null,
                 'idempotency_key' => $this->generateIdempotencyKey(),
             ];
-            $email = $this->userEmail($userId);
             if ($email !== null) {
                 $sessionParams['customer_email'] = $email;
+            }
+            if (!empty($options['payment_method_types']) && is_array($options['payment_method_types'])) {
+                $sessionParams['payment_method_types'] = array_values($options['payment_method_types']);
             }
             $result = $this->api->createCheckoutSession($sessionParams);
             if ($result === false) {
@@ -85,6 +94,7 @@ class PayjpService
             // 確定前の仮登録（status は active ではない / PaymentMethod 未保存）
             $user = $this->payjpUsers->newEntity([
                 'user_id' => $userId,
+                'payjp_customer_code' => $customerId,
                 'status' => 'inactive',
                 'type' => 'auto_charge',
                 'auto_charge_amount' => $autoChargeAmount,
@@ -105,11 +115,32 @@ class PayjpService
     }
 
     /**
+     * setup 用の顧客 ID（cus_...）を決める。
+     *
+     * 現行行に cus_ があれば再利用し、なければ metadata.user_id 付きで新規作成する。
+     * 旧データ（Users.id を顧客 ID にしたもの等）は再利用しない。
+     *
+     * @param int $userId 対象ユーザーID。
+     * @param string|null $email メール。
+     * @return string|false
+     */
+    private function resolveSetupCustomerId(int $userId, ?string $email): string|false
+    {
+        $current = $this->payjpUsers->find('currentByUser', userId: $userId)->first();
+        $existing = $current?->payjp_customer_code;
+        if (is_string($existing) && str_starts_with($existing, 'cus_')) {
+            return $existing;
+        }
+
+        return $this->api->createCustomer($email, ['user_id' => (string)$userId]);
+    }
+
+    /**
      * 都度課金。mode=payment の Checkout Session を作成し payjp_charges を pending で記録する。
      *
      * @param int $userId 対象ユーザーID。
      * @param int $amount 課金額（円）。
-     * @param array<string, mixed> $options success_url / cancel_url / point（加算ポイント。省略時は amount と同額）等。
+     * @param array<string, mixed> $options success_url / cancel_url / point（加算ポイント。省略時は amount と同額）/ payment_method_types（['card'] / ['paypay'] 等。省略時は未送信）等。
      * @return string|false リダイレクト URL、失敗時 false。
      */
     public function createPaymentCheckout(int $userId, int $amount, array $options = []): string|false
@@ -127,6 +158,9 @@ class PayjpService
             $email = $this->userEmail($userId);
             if ($email !== null) {
                 $sessionParams['customer_email'] = $email;
+            }
+            if (!empty($options['payment_method_types']) && is_array($options['payment_method_types'])) {
+                $sessionParams['payment_method_types'] = array_values($options['payment_method_types']);
             }
             $result = $this->api->createCheckoutSession($sessionParams);
             if ($result === false) {

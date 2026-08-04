@@ -11,14 +11,17 @@ use PAYJPV2\Api\CustomersApi;
 use PAYJPV2\Api\EventsApi;
 use PAYJPV2\Api\PaymentFlowsApi;
 use PAYJPV2\Api\PaymentMethodsApi;
+use PAYJPV2\Api\SetupFlowsApi;
 use PAYJPV2\ApiException;
 use PAYJPV2\Configuration;
 use PAYJPV2\Model\CheckoutSessionCreateRequest;
 use PAYJPV2\Model\CheckoutSessionMode;
 use PAYJPV2\Model\Currency;
+use PAYJPV2\Model\CustomerCreateRequest;
 use PAYJPV2\Model\CustomerCreation;
 use PAYJPV2\Model\LineItemRequest;
 use PAYJPV2\Model\PaymentFlowCreateRequest;
+use PAYJPV2\Model\PaymentMethodTypes;
 use PAYJPV2\Model\PriceDataRequest;
 use PAYJPV2\Model\ProductDataRequest;
 use Throwable;
@@ -53,7 +56,7 @@ class PayjpApiService
     /**
      * Checkout Session を作成し、リダイレクト URL とセッション ID を返す。
      *
-     * @param array<string, mixed> $params mode(setup|payment) / amount / success_url / cancel_url / customer_email / user_id 等。
+     * @param array<string, mixed> $params mode(setup|payment) / amount / success_url / cancel_url / customer_id / customer_email / user_id / payment_method_types 等。
      * @return array{id: string, url: string}|false
      */
     public function createCheckoutSession(array $params): array|false
@@ -62,11 +65,21 @@ class PayjpApiService
             $mode = CheckoutSessionMode::from((string)($params['mode'] ?? 'payment'));
             $request = new CheckoutSessionCreateRequest();
             $request->setMode($mode);
+            if (!empty($params['payment_method_types']) && is_array($params['payment_method_types'])) {
+                $types = [];
+                foreach ($params['payment_method_types'] as $type) {
+                    $types[] = PaymentMethodTypes::from((string)$type);
+                }
+                $request->setPaymentMethodTypes($types);
+            }
             if (!empty($params['success_url'])) {
                 $request->setSuccessUrl((string)$params['success_url']);
             }
             if (!empty($params['cancel_url'])) {
                 $request->setCancelUrl((string)$params['cancel_url']);
+            }
+            if (!empty($params['customer_id'])) {
+                $request->setCustomerId((string)$params['customer_id']);
             }
             if (!empty($params['customer_email'])) {
                 $request->setCustomerEmail((string)$params['customer_email']);
@@ -76,8 +89,10 @@ class PayjpApiService
             }
 
             if ($mode === CheckoutSessionMode::SETUP) {
-                // カード登録は顧客を必ず作成する
-                $request->setCustomerCreation(CustomerCreation::ALWAYS);
+                // 既存顧客を紐付ける場合は CustomerCreation 不要。未指定時のみ自動作成。
+                if (empty($params['customer_id'])) {
+                    $request->setCustomerCreation(CustomerCreation::ALWAYS);
+                }
             } else {
                 // 都度課金は金額を line_items で指定する
                 $product = (new ProductDataRequest())->setName($params['product_name'] ?? 'ポイントチャージ');
@@ -108,7 +123,37 @@ class PayjpApiService
     }
 
     /**
+     * 顧客を新規作成し、自動採番された顧客 ID（cus_...）を返す。
+     *
+     * @param string|null $email メールアドレス。
+     * @param array<string, mixed> $metadata メタデータ（例: user_id）。
+     * @return string|false
+     */
+    public function createCustomer(?string $email = null, array $metadata = []): string|false
+    {
+        try {
+            $request = new CustomerCreateRequest();
+            if ($email !== null && $email !== '') {
+                $request->setEmail($email);
+            }
+            if ($metadata !== []) {
+                $request->setMetadata($metadata);
+            }
+            $created = (new CustomersApi(null, $this->config()))->createCustomer($request);
+
+            return $created->getId();
+        } catch (Throwable $e) {
+            Log::error('PayjpApiService::createCustomer failed: ' . $e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
      * Checkout Session を取得し、確定に必要な情報を返す。
+     *
+     * Checkout Session 自体に payment_method_id はないため、mode に応じて
+     * SetupFlow / PaymentFlow から pm_ を取得し、カード詳細を付与する。
      *
      * @param string $sessionId Checkout Session ID（cs_...）。
      * @return array<string, mixed>|false
@@ -119,15 +164,18 @@ class PayjpApiService
             $api = new CheckoutSessionsApi(null, $this->config());
             $response = $api->getCheckoutSession($sessionId);
             $metadata = $response->getMetadata();
-            $paymentMethodId = method_exists($response, 'getPaymentMethodId') ? $response->getPaymentMethodId() : null;
+            $mode = $response->getMode()->value;
+            $setupFlowId = $response->getSetupFlowId();
+            $paymentFlowId = $response->getPaymentFlowId();
+            $paymentMethodId = $this->paymentMethodIdFromFlows($mode, $setupFlowId, $paymentFlowId);
             [$cardBrand, $cardLast4, $cardDeadline] = $this->cardDetails($paymentMethodId);
 
             return [
                 'id' => $response->getId(),
-                'mode' => $response->getMode()->value,
+                'mode' => $mode,
                 'status' => $response->getStatus()->value,
-                'payment_flow_id' => $response->getPaymentFlowId(),
-                'setup_flow_id' => $response->getSetupFlowId(),
+                'payment_flow_id' => $paymentFlowId,
+                'setup_flow_id' => $setupFlowId,
                 'customer_id' => $response->getCustomerId(),
                 'payment_method_id' => $paymentMethodId,
                 'card_brand' => $cardBrand,
@@ -140,6 +188,36 @@ class PayjpApiService
 
             return false;
         }
+    }
+
+    /**
+     * mode に応じて SetupFlow / PaymentFlow から PaymentMethod ID を取得する。
+     *
+     * Flow 取得失敗時はログ警告し null を返す（Checkout Session 本体の確定は妨げない）。
+     *
+     * @param string $mode setup|payment。
+     * @param string|null $setupFlowId SetupFlow ID（setup モード時）。
+     * @param string|null $paymentFlowId PaymentFlow ID（payment モード時）。
+     * @return string|null
+     */
+    private function paymentMethodIdFromFlows(string $mode, ?string $setupFlowId, ?string $paymentFlowId): ?string
+    {
+        try {
+            if ($mode === 'setup' && !empty($setupFlowId)) {
+                $flow = (new SetupFlowsApi(null, $this->config()))->getSetupFlow($setupFlowId);
+
+                return $flow->getPaymentMethodId();
+            }
+            if ($mode === 'payment' && !empty($paymentFlowId)) {
+                $flow = (new PaymentFlowsApi(null, $this->config()))->getPaymentFlow($paymentFlowId);
+
+                return $flow->getPaymentMethodId();
+            }
+        } catch (Throwable $e) {
+            Log::warning('PayjpApiService::paymentMethodIdFromFlows failed: ' . $e->getMessage());
+        }
+
+        return null;
     }
 
     /**

@@ -52,6 +52,9 @@ class PayjpServiceTest extends TestCase
         $mock->method('createCheckoutSession')->willReturn(
             $overrides['createCheckoutSession'] ?? ['id' => 'cs_new_001', 'url' => 'https://checkout.pay.jp/cs_new_001'],
         );
+        $mock->method('createCustomer')->willReturn(
+            $overrides['createCustomer'] ?? 'cus_new_001',
+        );
         $mock->method('getCheckoutSession')->willReturn(
             $overrides['getCheckoutSession'] ?? [
                 'id' => 'cs_new_001',
@@ -122,12 +125,19 @@ class PayjpServiceTest extends TestCase
     public function testCreateSetupCheckout_success_returnsUrlAndProvisionsUser(): void
     {
         // fixture user 5 の email（test5@example.com）が customer_email として渡る。
+        // 顧客は cus_ 自動採番。Users.id は Customer metadata.user_id。
         $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->once())
+            ->method('createCustomer')
+            ->with('test5@example.com', ['user_id' => '5'])
+            ->willReturn('cus_setup_001');
         $api->expects($this->once())
             ->method('createCheckoutSession')
             ->with($this->callback(
                 fn(array $params) => ($params['mode'] ?? null) === 'setup'
-                    && ($params['customer_email'] ?? null) === 'test5@example.com',
+                    && ($params['customer_id'] ?? null) === 'cus_setup_001'
+                    && ($params['customer_email'] ?? null) === 'test5@example.com'
+                    && !array_key_exists('payment_method_types', $params),
             ))
             ->willReturn(['id' => 'cs_new_001', 'url' => 'https://checkout.pay.jp/cs_new_001']);
         $service = new PayjpService($api);
@@ -143,10 +153,33 @@ class PayjpServiceTest extends TestCase
         $this->assertNotNull($user, '仮登録の payjp_users が作成される');
         $this->assertSame('auto_charge', $user->type);
         $this->assertSame(12000, $user->auto_charge_amount);
+        $this->assertSame('cus_setup_001', $user->payjp_customer_code);
         // 確定前：PaymentMethod 未保存・active ではない
         $this->assertEmpty($user->payjp_payment_method_code);
         $this->assertNotSame('active', $user->status);
         $this->assertNull($user->auto_charge_point, 'point 未指定は NULL（実行時 amount と同額を加算）');
+    }
+
+    // 単体実行: composer test:payjp -- --filter testCreateSetupCheckout_withPaymentMethodTypes_forwardsToApi
+    public function testCreateSetupCheckout_withPaymentMethodTypes_forwardsToApi(): void
+    {
+        $api = $this->createMock(PayjpApiService::class);
+        $api->method('createCustomer')->willReturn('cus_setup_pmt');
+        $api->expects($this->once())
+            ->method('createCheckoutSession')
+            ->with($this->callback(
+                fn(array $params) => ($params['mode'] ?? null) === 'setup'
+                    && ($params['customer_id'] ?? null) === 'cus_setup_pmt'
+                    && ($params['payment_method_types'] ?? null) === ['card'],
+            ))
+            ->willReturn(['id' => 'cs_setup_pmt', 'url' => 'https://checkout.pay.jp/cs_setup_pmt']);
+        $service = new PayjpService($api);
+
+        $url = $service->createSetupCheckout(5, 9000, [
+            'payment_method_types' => ['card'],
+        ]);
+
+        $this->assertSame('https://checkout.pay.jp/cs_setup_pmt', $url);
     }
 
     // 単体実行: composer test:payjp -- --filter testCreateSetupCheckout_withPointOption_recordsAutoChargePoint
@@ -161,6 +194,7 @@ class PayjpServiceTest extends TestCase
         $user = $this->payjpUsers()->find()->where(['user_id' => 5])->first();
         $this->assertSame(6000, $user->auto_charge_amount);
         $this->assertSame(6100, $user->auto_charge_point, 'ボーナス込みの加算ポイントを保存する');
+        $this->assertSame('cus_new_001', $user->payjp_customer_code);
     }
 
     public function testCreateSetupCheckout_apiReturnsFalse_returnsFalse(): void
@@ -172,9 +206,43 @@ class PayjpServiceTest extends TestCase
         $this->assertFalse($result);
     }
 
+    public function testCreateSetupCheckout_createCustomerFails_returnsFalse(): void
+    {
+        $api = $this->apiSuccess(['createCustomer' => false]);
+        $service = new PayjpService($api);
+
+        $result = $service->createSetupCheckout(5, 12000, []);
+        $this->assertFalse($result);
+    }
+
+    public function testCreateSetupCheckout_reusesExistingCusCustomerId(): void
+    {
+        // fixture user 1 は active + pm + cus_test_1 → createCustomer せず再利用
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->never())->method('createCustomer');
+        $api->expects($this->once())
+            ->method('createCheckoutSession')
+            ->with($this->callback(
+                fn(array $params) => ($params['customer_id'] ?? null) === 'cus_test_1',
+            ))
+            ->willReturn(['id' => 'cs_reuse', 'url' => 'https://checkout.pay.jp/cs_reuse']);
+        $service = new PayjpService($api);
+
+        $url = $service->createSetupCheckout(1, 6000, ['point' => 6100]);
+
+        $this->assertSame('https://checkout.pay.jp/cs_reuse', $url);
+        $provisional = $this->payjpUsers()->find()
+            ->where(['user_id' => 1, 'payjp_customer_code' => 'cus_test_1', 'status' => 'inactive'])
+            ->orderBy(['id' => 'DESC'])
+            ->first();
+        $this->assertNotNull($provisional);
+        $this->assertEmpty($provisional->payjp_payment_method_code);
+    }
+
     public function testCreateSetupCheckout_apiThrows_returnsFalse(): void
     {
         $api = $this->createMock(PayjpApiService::class);
+        $api->method('createCustomer')->willReturn('cus_err');
         $api->method('createCheckoutSession')->willThrowException(new RuntimeException('api error'));
         $service = new PayjpService($api);
 
@@ -189,13 +257,15 @@ class PayjpServiceTest extends TestCase
     public function testCreatePaymentCheckout_success_returnsUrlAndRecordsPending(): void
     {
         // fixture user 5 の email（test5@example.com）が customer_email として渡る。
+        // payment_method_types 未指定時は API へキーを送らない（後方互換）。
         $api = $this->createMock(PayjpApiService::class);
         $api->expects($this->once())
             ->method('createCheckoutSession')
             ->with($this->callback(
                 fn(array $params) => ($params['mode'] ?? null) === 'payment'
                     && ($params['amount'] ?? null) === 3000
-                    && ($params['customer_email'] ?? null) === 'test5@example.com',
+                    && ($params['customer_email'] ?? null) === 'test5@example.com'
+                    && !array_key_exists('payment_method_types', $params),
             ))
             ->willReturn(['id' => 'cs_pay_777', 'url' => 'https://checkout.pay.jp/cs_pay_777']);
         $service = new PayjpService($api);
@@ -214,6 +284,26 @@ class PayjpServiceTest extends TestCase
         $this->assertSame(3000, $charge->amount);
         $this->assertNull($charge->point, 'point 未指定は NULL（確定時 amount と同額を加算）');
         $this->assertNull($charge->point_book_id, '確定前は point_book_id NULL');
+    }
+
+    // 単体実行: composer test:payjp -- --filter testCreatePaymentCheckout_withPaymentMethodTypes_forwardsToApi
+    public function testCreatePaymentCheckout_withPaymentMethodTypes_forwardsToApi(): void
+    {
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->once())
+            ->method('createCheckoutSession')
+            ->with($this->callback(
+                fn(array $params) => ($params['mode'] ?? null) === 'payment'
+                    && ($params['payment_method_types'] ?? null) === ['paypay'],
+            ))
+            ->willReturn(['id' => 'cs_pay_pmt', 'url' => 'https://checkout.pay.jp/cs_pay_pmt']);
+        $service = new PayjpService($api);
+
+        $url = $service->createPaymentCheckout(5, 1000, [
+            'payment_method_types' => ['paypay'],
+        ]);
+
+        $this->assertSame('https://checkout.pay.jp/cs_pay_pmt', $url);
     }
 
     // 単体実行: composer test:payjp -- --filter testCreatePaymentCheckout_withPointOption_recordsPoint
