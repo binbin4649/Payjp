@@ -1199,6 +1199,162 @@ class PayjpServiceTest extends TestCase
     }
 
     // ============================================================
+    // checkoutStatus（ローディング画面のポーリング用・DB のみ参照）
+    // ============================================================
+
+    public function testCheckoutStatus_payment_reflectsChargeStatus(): void
+    {
+        $service = new PayjpService($this->apiSuccess());
+
+        // fixture: cs_test_001 = user1/success, cs_test_002 = user1/pending
+        $this->assertSame(['state' => 'success', 'kind' => 'payment'], $service->checkoutStatus('cs_test_001', 1));
+        $this->assertSame(['state' => 'pending', 'kind' => 'payment'], $service->checkoutStatus('cs_test_002', 1));
+    }
+
+    public function testCheckoutStatus_payment_failure(): void
+    {
+        $service = new PayjpService($this->apiSuccess());
+
+        // fixture: cs_test_003 = user2/failure
+        $this->assertSame(['state' => 'failure', 'kind' => 'payment'], $service->checkoutStatus('cs_test_003', 2));
+    }
+
+    /**
+     * 他人のセッション ID を投げても状態を漏らさない（pending 扱い）。
+     */
+    public function testCheckoutStatus_otherUsersSessionIsNotLeaked(): void
+    {
+        $service = new PayjpService($this->apiSuccess());
+
+        $this->assertSame(['state' => 'pending', 'kind' => null], $service->checkoutStatus('cs_test_001', 999));
+        $this->assertSame(['state' => 'pending', 'kind' => null], $service->checkoutStatus('cs_test_003', 1));
+    }
+
+    public function testCheckoutStatus_unknownSessionIsPending(): void
+    {
+        $service = new PayjpService($this->apiSuccess());
+
+        $this->assertSame(['state' => 'pending', 'kind' => null], $service->checkoutStatus('cs_unknown', 1));
+        $this->assertSame(['state' => 'pending', 'kind' => null], $service->checkoutStatus('', 1));
+    }
+
+    /**
+     * setup は仮登録（pm 未保存）のうちは pending、確定して active + pm ありで success。
+     */
+    public function testCheckoutStatus_setupPendingThenSuccess(): void
+    {
+        $users = $this->payjpUsers();
+        $row = $users->newEntity([
+            'user_id' => 5,
+            'status' => 'inactive',
+            'type' => 'auto_charge',
+            'payjp_customer_code' => 'cus_setup_5',
+            'payjp_checkout_session_code' => 'cs_setup_5',
+        ], ['validate' => false, 'accessibleFields' => ['*' => true]]);
+        $users->saveOrFail($row, ['checkRules' => false]);
+
+        $service = new PayjpService($this->apiSuccess());
+        $this->assertSame(['state' => 'pending', 'kind' => 'setup'], $service->checkoutStatus('cs_setup_5', 5));
+
+        $row->status = 'active';
+        $row->payjp_payment_method_code = 'pm_setup_5';
+        $users->saveOrFail($row, ['checkRules' => false]);
+
+        $this->assertSame(['state' => 'success', 'kind' => 'setup'], $service->checkoutStatus('cs_setup_5', 5));
+    }
+
+    /**
+     * createSetupCheckout は仮登録行に cs_ を保存する（ポーリング・cron の照合キー）。
+     */
+    public function testCreateSetupCheckout_storesCheckoutSessionId(): void
+    {
+        $service = new PayjpService($this->apiSuccess());
+
+        $url = $service->createSetupCheckout(5, 10000, [
+            'success_url' => 'https://example.com/ok',
+            'cancel_url' => 'https://example.com/ng',
+        ]);
+
+        $this->assertNotFalse($url);
+        $row = $this->payjpUsers()->find()->where(['user_id' => 5])->orderBy(['id' => 'DESC'])->first();
+        $this->assertNotNull($row);
+        $this->assertSame('cs_new_001', $row->payjp_checkout_session_code);
+    }
+
+    // ============================================================
+    // syncPendingCheckouts（cron による pending 回収）
+    // ============================================================
+
+    public function testSyncPendingCheckouts_confirmsPendingCharge(): void
+    {
+        $api = $this->apiSuccess([
+            'getCheckoutSession' => [
+                'id' => 'cs_test_002',
+                'mode' => 'payment',
+                'status' => 'completed',
+                'payment_flow_id' => 'pf_sync_002',
+                'customer_id' => 'cus_test_1',
+                'payment_method_id' => 'pm_sync_002',
+                'user_id' => 1,
+            ],
+        ]);
+        $service = new PayjpService($api);
+        // fixture の created は数か月前なので、対象ウィンドウ内に寄せる
+        $this->payjpCharges()->updateAll(['created' => new DateTime()], ['id' => 2]);
+
+        $result = $service->syncPendingCheckouts(24);
+
+        $this->assertGreaterThanOrEqual(1, $result['checked']);
+        $this->assertSame('success', $this->payjpCharges()->get(2)->status);
+        $this->assertNotNull($this->payjpCharges()->get(2)->point_book_id, '確定でポイントが付与される');
+    }
+
+    /**
+     * 遡り時間より古い pending は対象外（放置行を無限に叩かない）。
+     */
+    public function testSyncPendingCheckouts_skipsRowsOlderThanWindow(): void
+    {
+        $charges = $this->payjpCharges();
+        $charges->updateAll(['created' => new DateTime('-72 hours')], ['id' => 2]);
+        $this->payjpUsers()->updateAll(['created' => new DateTime('-72 hours')], []);
+
+        $api = $this->createMock(PayjpApiService::class);
+        $api->expects($this->never())->method('getCheckoutSession');
+        $service = new PayjpService($api);
+
+        $result = $service->syncPendingCheckouts(24);
+
+        $this->assertSame(['checked' => 0, 'confirmed' => 0, 'failed' => 0], $result);
+        $this->assertSame('pending', $charges->get(2)->status);
+    }
+
+    /**
+     * 1 件が例外を投げても残りを処理し、件数を返す。
+     */
+    public function testSyncPendingCheckouts_isolatesFailures(): void
+    {
+        $users = $this->payjpUsers();
+        $row = $users->newEntity([
+            'user_id' => 5,
+            'status' => 'inactive',
+            'type' => 'auto_charge',
+            'payjp_customer_code' => 'cus_setup_5',
+            'payjp_checkout_session_code' => 'cs_setup_5',
+        ], ['validate' => false, 'accessibleFields' => ['*' => true]]);
+        $users->saveOrFail($row, ['checkRules' => false]);
+        $this->payjpCharges()->updateAll(['created' => new DateTime()], ['id' => 2]);
+
+        $api = $this->createMock(PayjpApiService::class);
+        $api->method('getCheckoutSession')->willThrowException(new RuntimeException('boom'));
+        $service = new PayjpService($api);
+
+        $result = $service->syncPendingCheckouts(24);
+
+        $this->assertSame(2, $result['checked'], 'pending の課金 1 件 + 仮登録 1 件');
+        $this->assertSame(0, $result['confirmed']);
+    }
+
+    // ============================================================
     // generateIdempotencyKey（内部・間接検証）
     // ============================================================
 

@@ -164,6 +164,20 @@ class PayjpUsersTable extends AppTable
     }
 
     /**
+     * Checkout Session ID で行を引くファインダー（webhook / リダイレクト確定・状態ポーリング用）。
+     *
+     * `PayjpChargesTable::findByCheckoutSession()` と対称。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param string $sessionId Checkout Session ID（cs_...）。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findByCheckoutSession(SelectQuery $query, string $sessionId): SelectQuery
+    {
+        return $query->where(['PayjpUsers.payjp_checkout_session_code' => $sessionId]);
+    }
+
+    /**
      * ユーザーの「現在の登録カード行」を取得するファインダー。
      *
      * カード登録済み（payjp_payment_method_code あり）かつ生存ステータス

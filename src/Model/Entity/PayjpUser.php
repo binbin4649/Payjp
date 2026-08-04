@@ -14,6 +14,7 @@ use Member\Model\Entity\AppEntity;
  * @property int|null $auto_charge_amount
  * @property int|null $auto_charge_point
  * @property string|null $payjp_customer_code
+ * @property string|null $payjp_checkout_session_code
  * @property string|null $payjp_payment_method_code
  * @property string|null $card_brand
  * @property string|null $card_last4
@@ -56,6 +57,7 @@ class PayjpUser extends AppEntity
         'auto_charge_amount' => true,
         'auto_charge_point' => true,
         'payjp_customer_code' => true,
+        'payjp_checkout_session_code' => true,
         'payjp_payment_method_code' => true,
         'card_brand' => true,
         'card_last4' => true,

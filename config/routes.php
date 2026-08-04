@@ -17,6 +17,8 @@ return static function (RouteBuilder $routes): void {
         $routes->connect('/webhook', ['controller' => 'PayjpWebhooks', 'action' => 'index']);
         // Checkout の success_url 到達時の確定（メソッド制限はコントローラー側）。
         $routes->connect('/complete', ['controller' => 'Payments', 'action' => 'complete']);
+        // 確定状態のポーリング（ローディング画面から 2 秒間隔・要ログイン）。
+        $routes->connect('/status', ['controller' => 'Payments', 'action' => 'status']);
 
         $routes->fallbacks(DashedRoute::class);
     });

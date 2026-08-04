@@ -11,6 +11,7 @@ use Cake\Core\PluginApplicationInterface;
 use Cake\Http\MiddlewareQueue;
 use Cake\Routing\RouteBuilder;
 use Payjp\Command\CardDeadlineCommand;
+use Payjp\Command\SyncPendingCommand;
 use Payjp\Service\PayjpService;
 
 /**
@@ -45,5 +46,6 @@ class PayjpPlugin extends BasePlugin
         // 型付きコンストラクタを持つ Command は DI 登録しないと CommandFactory が
         // new $className($factory) で生成して TypeError になる（NosPlugin と同様）。
         $container->add(CardDeadlineCommand::class);
+        $container->add(SyncPendingCommand::class);
     }
 }

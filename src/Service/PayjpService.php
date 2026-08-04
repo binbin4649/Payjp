@@ -95,6 +95,8 @@ class PayjpService
             $user = $this->payjpUsers->newEntity([
                 'user_id' => $userId,
                 'payjp_customer_code' => $customerId,
+                // 確定状態のポーリングと cron の照合でこの行を特定するため cs_ を持たせる
+                'payjp_checkout_session_code' => $result['id'] ?? null,
                 'status' => 'inactive',
                 'type' => 'auto_charge',
                 'auto_charge_amount' => $autoChargeAmount,
@@ -521,6 +523,113 @@ class PayjpService
         }
 
         return false;
+    }
+
+    /**
+     * Checkout Session の確定状態を**自社 DB だけ**から返す（webhook 受信の検知用）。
+     *
+     * 画面のローディングから 2 秒間隔で呼ばれるため、PAY.JP API は叩かない。
+     * 確定の正本は webhook（handleWebhook）で、このメソッドはその結果を読むだけ。
+     *
+     * @param string $checkoutSessionId Checkout Session ID（cs_...）。
+     * @param int $userId 問い合わせ元ユーザーID（他人のセッションを覗かせないための照合）。
+     * @return array{state: string, kind: string|null} state は pending / success / failure。
+     */
+    public function checkoutStatus(string $checkoutSessionId, int $userId): array
+    {
+        $pending = ['state' => 'pending', 'kind' => null];
+        if ($checkoutSessionId === '') {
+            return $pending;
+        }
+
+        $charge = $this->payjpCharges->find('byCheckoutSession', sessionId: $checkoutSessionId)->first();
+        if ($charge !== null) {
+            // 他ユーザーのセッション ID を投げられても状態を漏らさない
+            if ((int)$charge->user_id !== $userId) {
+                return $pending;
+            }
+
+            return [
+                'state' => match ($charge->status) {
+                    'success' => 'success',
+                    'failure' => 'failure',
+                    default => 'pending',
+                },
+                'kind' => 'payment',
+            ];
+        }
+
+        $user = $this->payjpUsers->find('byCheckoutSession', sessionId: $checkoutSessionId)->first();
+        if ($user !== null) {
+            if ((int)$user->user_id !== $userId) {
+                return $pending;
+            }
+            $confirmed = $user->status === 'active' && !empty($user->payjp_payment_method_code);
+
+            return [
+                'state' => match (true) {
+                    $confirmed => 'success',
+                    $user->status === 'failure' => 'failure',
+                    default => 'pending',
+                },
+                'kind' => 'setup',
+            ];
+        }
+
+        // 記録が見つからない場合は pending 扱い（cron の照合に委ねる）
+        return $pending;
+    }
+
+    /**
+     * 確定していない Checkout を PAY.JP と照合して確定する（webhook 未着の回収）。
+     *
+     * success_url に戻ってこなかった／webhook が届かなかったケースを cron から拾う。
+     * 確定処理・冪等ガードは completeCheckout() に委ねる。1 件の失敗は他へ波及させない。
+     *
+     * @param int $withinHours 対象とする作成日時の遡り時間（既定 24 時間）。
+     * @return array{checked: int, confirmed: int, failed: int}
+     */
+    public function syncPendingCheckouts(int $withinHours = 24): array
+    {
+        $since = new DateTime('-' . max(1, $withinHours) . ' hours');
+        $result = ['checked' => 0, 'confirmed' => 0, 'failed' => 0];
+
+        $sessionIds = $this->payjpCharges->find()
+            ->select(['payjp_checkout_session_code'])
+            ->where([
+                'PayjpCharges.status' => 'pending',
+                'PayjpCharges.payjp_checkout_session_code IS NOT' => null,
+                'PayjpCharges.created >=' => $since,
+            ])
+            ->all()
+            ->extract('payjp_checkout_session_code')
+            ->toList();
+
+        // 仮登録のまま（PaymentMethod 未保存）のカード登録行
+        $setupIds = $this->payjpUsers->find()
+            ->select(['payjp_checkout_session_code'])
+            ->where([
+                'PayjpUsers.payjp_checkout_session_code IS NOT' => null,
+                'PayjpUsers.payjp_payment_method_code IS' => null,
+                'PayjpUsers.created >=' => $since,
+            ])
+            ->all()
+            ->extract('payjp_checkout_session_code')
+            ->toList();
+
+        foreach (array_unique([...$sessionIds, ...$setupIds]) as $sessionId) {
+            $result['checked']++;
+            try {
+                if ($this->completeCheckout((string)$sessionId) !== false) {
+                    $result['confirmed']++;
+                }
+            } catch (Throwable $e) {
+                $result['failed']++;
+                Log::error('PayjpService::syncPendingCheckouts failed session=' . $sessionId . ': ' . $e->getMessage());
+            }
+        }
+
+        return $result;
     }
 
     /**

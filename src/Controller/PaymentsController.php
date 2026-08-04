@@ -64,6 +64,37 @@ class PaymentsController extends AppController
     }
 
     /**
+     * Checkout の確定状態を返すポーリング用エンドポイント（JSON）。
+     *
+     * 画面のローディングから 2 秒間隔で叩かれるため、通常は自社 DB だけを見る
+     * （確定の正本は webhook）。`final=1` のときだけ、30 秒タイムアウト時の保険として
+     * completeCheckout() を 1 回試してから結果を返す。
+     */
+    public function status(): Response
+    {
+        $this->request->allowMethod(['get']);
+
+        $sessionId = (string)$this->request->getQuery('session_id', '');
+        $userId = (int)($this->Authentication->getIdentity()->id ?? 0);
+        $service = $this->payjpService();
+        $result = $service->checkoutStatus($sessionId, $userId);
+
+        // タイムアウト直前の最終確認。webhook 未着でも API 側が確定済みなら拾える
+        if ($result['state'] === 'pending' && $this->request->getQuery('final')) {
+            try {
+                $service->completeCheckout($sessionId);
+            } catch (Throwable $e) {
+                Log::error('PaymentsController::status final check failed session=' . $sessionId . ': ' . $e->getMessage());
+            }
+            $result = $service->checkoutStatus($sessionId, $userId);
+        }
+
+        return $this->response
+            ->withType('application/json')
+            ->withStringBody((string)json_encode($result));
+    }
+
+    /**
      * PayjpService を生成する。テストでのモック差し替え用シーム。
      */
     protected function payjpService(): PayjpService
