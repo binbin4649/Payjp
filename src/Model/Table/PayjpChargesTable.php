@@ -186,4 +186,28 @@ class PayjpChargesTable extends AppTable
     {
         return $query->where(['PayjpCharges.payjp_checkout_session_code' => $sessionId]);
     }
+
+    /**
+     * Payment Flow ID（pf_... / pfw_...）で課金レコードを取得するファインダー。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param string $paymentFlowId Payment Flow ID。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findByPaymentFlow(SelectQuery $query, string $paymentFlowId): SelectQuery
+    {
+        return $query->where(['PayjpCharges.payjp_payment_flow_code' => $paymentFlowId]);
+    }
+
+    /**
+     * 冪等キーで課金レコードを取得するファインダー（payment_flow webhook の metadata 解決用）。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param string $idempotencyKey 冪等キー。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findByIdempotencyKey(SelectQuery $query, string $idempotencyKey): SelectQuery
+    {
+        return $query->where(['PayjpCharges.idempotency_key' => $idempotencyKey]);
+    }
 }

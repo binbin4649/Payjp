@@ -441,12 +441,12 @@ class PayjpService
         $mode = $data['mode'] ?? null;
 
         // カード登録（setup）完了
-        if ($type === 'checkout_session.completed' && $mode === 'setup') {
+        if ($type === 'checkout.session.completed' && $mode === 'setup') {
             return $this->confirmSetup($data);
         }
 
         // 都度課金（one_time）成功
-        if ($type === 'payment_flow.succeeded' || ($type === 'checkout_session.completed' && $mode === 'payment')) {
+        if ($type === 'payment_flow.succeeded' || ($type === 'checkout.session.completed' && $mode === 'payment')) {
             return $this->confirmCharge($data);
         }
 
@@ -633,6 +633,60 @@ class PayjpService
     }
 
     /**
+     * webhook データから pending / 既存 charge を解決する。
+     *
+     * 解決順: cs_ id → checkout_session_id → metadata.idempotency_key → payment_flow_id。
+     *
+     * @param array<string, mixed> $data イベントデータ（正規化済み）。
+     * @return \Payjp\Model\Entity\PayjpCharge|null
+     */
+    private function findChargeForWebhookData(array $data): ?PayjpCharge
+    {
+        $id = (string)($data['id'] ?? '');
+        if (str_starts_with($id, 'cs_')) {
+            $charge = $this->payjpCharges->find('byCheckoutSession', sessionId: $id)->first();
+            if ($charge !== null) {
+                return $charge;
+            }
+        }
+
+        $checkoutSessionId = (string)($data['checkout_session_id'] ?? '');
+        if (str_starts_with($checkoutSessionId, 'cs_')) {
+            $charge = $this->payjpCharges->find('byCheckoutSession', sessionId: $checkoutSessionId)->first();
+            if ($charge !== null) {
+                return $charge;
+            }
+        }
+
+        $metadata = (array)($data['metadata'] ?? []);
+        $idempotencyKey = (string)($data['idempotency_key'] ?? ($metadata['idempotency_key'] ?? ''));
+        if ($idempotencyKey !== '') {
+            $charge = $this->payjpCharges->find('byIdempotencyKey', idempotencyKey: $idempotencyKey)->first();
+            if ($charge !== null) {
+                return $charge;
+            }
+        }
+
+        $paymentFlowId = (string)($data['payment_flow_id'] ?? '');
+        if ($paymentFlowId === '' && $id !== '' && !str_starts_with($id, 'cs_')) {
+            $paymentFlowId = $id;
+        }
+        if ($paymentFlowId !== '') {
+            $charge = $this->payjpCharges->find('byPaymentFlow', paymentFlowId: $paymentFlowId)->first();
+            if ($charge !== null) {
+                return $charge;
+            }
+        }
+
+        Log::warning('PayjpService::findChargeForWebhookData: charge not found id=' . $id
+            . ' checkout_session_id=' . $checkoutSessionId
+            . ' idempotency_key=' . $idempotencyKey
+            . ' payment_flow_id=' . $paymentFlowId);
+
+        return null;
+    }
+
+    /**
      * 都度課金の成功確定（webhook 経路）。
      *
      * @param array<string, mixed> $data イベントデータ。
@@ -640,11 +694,7 @@ class PayjpService
      */
     private function confirmCharge(array $data): bool
     {
-        $sessionId = $data['id'] ?? null;
-        if (empty($sessionId)) {
-            return false;
-        }
-        $charge = $this->payjpCharges->find('byCheckoutSession', sessionId: (string)$sessionId)->first();
+        $charge = $this->findChargeForWebhookData($data);
         if ($charge === null) {
             return false;
         }
@@ -760,11 +810,7 @@ class PayjpService
      */
     private function failCharge(array $data, string $type): bool
     {
-        $sessionId = $data['id'] ?? null;
-        if (empty($sessionId)) {
-            return false;
-        }
-        $charge = $this->payjpCharges->find('byCheckoutSession', sessionId: (string)$sessionId)->first();
+        $charge = $this->findChargeForWebhookData($data);
         if ($charge === null) {
             return false;
         }

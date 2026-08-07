@@ -58,7 +58,7 @@ class PayjpWebhooksControllerTest extends TestCase
             ->willReturn(true);
         $this->mockService($mock);
 
-        $this->post('/payjp/webhook', (string)json_encode(['id' => 'evnt_abc', 'type' => 'checkout_session.completed']));
+        $this->post('/payjp/webhook', (string)json_encode(['id' => 'evnt_abc', 'type' => 'checkout.session.completed']));
 
         $this->assertResponseCode(200);
     }

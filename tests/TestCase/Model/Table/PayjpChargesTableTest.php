@@ -190,4 +190,34 @@ class PayjpChargesTableTest extends TestCase
         $results = $this->PayjpCharges->find('byCheckoutSession', sessionId: 'cs_not_exist')->toArray();
         $this->assertSame([], $results);
     }
+
+    // ---- findByPaymentFlow ----
+
+    public function testFindByPaymentFlow_returnsMatchingRecord(): void
+    {
+        $results = $this->PayjpCharges->find('byPaymentFlow', paymentFlowId: 'pf_test_001')->toArray();
+        $this->assertCount(1, $results);
+        $this->assertSame(1, $results[0]->id);
+    }
+
+    public function testFindByPaymentFlow_noMatch_returnsEmpty(): void
+    {
+        $results = $this->PayjpCharges->find('byPaymentFlow', paymentFlowId: 'pf_not_exist')->toArray();
+        $this->assertSame([], $results);
+    }
+
+    // ---- findByIdempotencyKey ----
+
+    public function testFindByIdempotencyKey_returnsMatchingRecord(): void
+    {
+        $results = $this->PayjpCharges->find('byIdempotencyKey', idempotencyKey: 'idem_test_002')->toArray();
+        $this->assertCount(1, $results);
+        $this->assertSame(2, $results[0]->id);
+    }
+
+    public function testFindByIdempotencyKey_noMatch_returnsEmpty(): void
+    {
+        $results = $this->PayjpCharges->find('byIdempotencyKey', idempotencyKey: 'idem_missing')->toArray();
+        $this->assertSame([], $results);
+    }
 }

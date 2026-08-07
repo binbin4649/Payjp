@@ -265,6 +265,8 @@ class PayjpServiceTest extends TestCase
                 fn(array $params) => ($params['mode'] ?? null) === 'payment'
                     && ($params['amount'] ?? null) === 3000
                     && ($params['customer_email'] ?? null) === 'test5@example.com'
+                    && ($params['user_id'] ?? null) === 5
+                    && !empty($params['idempotency_key'])
                     && !array_key_exists('payment_method_types', $params),
             ))
             ->willReturn(['id' => 'cs_pay_777', 'url' => 'https://checkout.pay.jp/cs_pay_777']);
@@ -284,6 +286,7 @@ class PayjpServiceTest extends TestCase
         $this->assertSame(3000, $charge->amount);
         $this->assertNull($charge->point, 'point 未指定は NULL（確定時 amount と同額を加算）');
         $this->assertNull($charge->point_book_id, '確定前は point_book_id NULL');
+        $this->assertNotEmpty($charge->idempotency_key);
     }
 
     // 単体実行: composer test:payjp -- --filter testCreatePaymentCheckout_withPaymentMethodTypes_forwardsToApi
@@ -673,6 +676,87 @@ class PayjpServiceTest extends TestCase
         $this->assertSame($before + 2000, $after);
     }
 
+    // 単体実行: composer test:payjp -- --filter testHandleWebhook_paymentFlowSucceeded_resolvesByIdempotencyKey
+    public function testHandleWebhook_paymentFlowSucceeded_resolvesByIdempotencyKey(): void
+    {
+        // 実 API 形状: data.id は pfw_...。metadata.idempotency_key で pending charge を解決する。
+        $api = $this->apiSuccess();
+        $service = new PayjpService($api);
+
+        $before = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+
+        $event = [
+            'type' => 'payment_flow.succeeded',
+            'data' => [
+                'id' => 'pfw_real_002',
+                'status' => 'succeeded',
+                'payment_flow_id' => 'pfw_real_002',
+                'payment_method_id' => 'pm_pfw_002',
+                'idempotency_key' => 'idem_test_002',
+                'metadata' => [
+                    'idempotency_key' => 'idem_test_002',
+                    'user_id' => '1',
+                ],
+            ],
+        ];
+
+        $this->assertTrue($service->handleWebhook($event));
+
+        $charge = $this->payjpCharges()->get(2);
+        $this->assertSame('success', $charge->status);
+        $this->assertSame('pfw_real_002', $charge->payjp_payment_flow_code);
+        $this->assertNotNull($charge->point_book_id);
+
+        $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+        $this->assertSame($before + 2000, $after);
+    }
+
+    // 単体実行: composer test:payjp -- --filter testHandleWebhook_checkoutSessionCompleted_paymentConfirmsCharge
+    public function testHandleWebhook_checkoutSessionCompleted_paymentConfirmsCharge(): void
+    {
+        $api = $this->apiSuccess();
+        $service = new PayjpService($api);
+
+        $event = [
+            'type' => 'checkout.session.completed',
+            'data' => [
+                'id' => 'cs_test_002',
+                'mode' => 'payment',
+                'status' => 'completed',
+                'payment_flow_id' => 'pf_from_cs_002',
+                'payment_method_id' => 'pm_from_cs_002',
+            ],
+        ];
+
+        $this->assertTrue($service->handleWebhook($event));
+        $this->assertSame('success', $this->payjpCharges()->get(2)->status);
+    }
+
+    // 単体実行: composer test:payjp -- --filter testHandleWebhook_paymentFlowSucceeded_resolvesByPaymentFlowCode
+    public function testHandleWebhook_paymentFlowSucceeded_resolvesByPaymentFlowCode(): void
+    {
+        // 既に payjp_payment_flow_code がある行（再送等）は flow id で解決できる。
+        $api = $this->apiSuccess();
+        $service = new PayjpService($api);
+
+        $before = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+        $originalPointBookId = $this->payjpCharges()->get(1)->point_book_id;
+
+        $event = [
+            'type' => 'payment_flow.succeeded',
+            'data' => [
+                'id' => 'pf_test_001',
+                'status' => 'succeeded',
+                'payment_flow_id' => 'pf_test_001',
+            ],
+        ];
+        $this->assertTrue($service->handleWebhook($event));
+
+        $after = $this->pointUsers()->find()->where(['user_id' => 1])->first()->point;
+        $this->assertSame($before, $after, '既に success の行は二重加算しない');
+        $this->assertSame($originalPointBookId, $this->payjpCharges()->get(1)->point_book_id);
+    }
+
     // 単体実行: composer test:payjp -- --filter testHandleWebhook_oneTimeSuccessWithPoint_chargesPointNotAmount
     public function testHandleWebhook_oneTimeSuccessWithPoint_chargesPointNotAmount(): void
     {
@@ -710,7 +794,7 @@ class PayjpServiceTest extends TestCase
         $service->createSetupCheckout(5, 9000, []);
 
         $event = [
-            'type' => 'checkout_session.completed',
+            'type' => 'checkout.session.completed',
             'data' => [
                 'id' => 'cs_setup_900',
                 'mode' => 'setup',
@@ -742,7 +826,7 @@ class PayjpServiceTest extends TestCase
         $service->createSetupCheckout(1, 6000, ['point' => 6100]);
 
         $event = [
-            'type' => 'checkout_session.completed',
+            'type' => 'checkout.session.completed',
             'data' => [
                 'id' => 'cs_change_910',
                 'mode' => 'setup',
@@ -837,7 +921,7 @@ class PayjpServiceTest extends TestCase
         // fixture charge id=2: user1 / pending / cs_test_002
         $api = $this->apiSuccess();
         $api->method('getEvent')->with('evnt_123')->willReturn([
-            'type' => 'checkout_session.completed',
+            'type' => 'checkout.session.completed',
             'data' => [
                 'id' => 'cs_test_002',
                 'mode' => 'payment',
@@ -969,7 +1053,7 @@ class PayjpServiceTest extends TestCase
         $service->createSetupCheckout(5, 9000, []);
 
         $event = [
-            'type' => 'checkout_session.completed',
+            'type' => 'checkout.session.completed',
             'data' => [
                 'id' => 'cs_setup_920',
                 'mode' => 'setup',
@@ -996,7 +1080,7 @@ class PayjpServiceTest extends TestCase
         $service->createSetupCheckout(5, 9000, []);
 
         $event = [
-            'type' => 'checkout_session.completed',
+            'type' => 'checkout.session.completed',
             'data' => [
                 'id' => 'cs_setup_930',
                 'mode' => 'setup',

@@ -1,7 +1,9 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Payjp\Model\Entity;
+
 use Member\Model\Entity\AppEntity;
 
 /**
@@ -29,7 +31,7 @@ use Member\Model\Entity\AppEntity;
 class PayjpUser extends AppEntity
 {
     public const STATUS = [
-        'active' => '正常稼働',
+        'active' => '登録済み',
         'suspended' => 'リトライ待ち',
         'inactive' => '停止',
         'failure' => '失敗',

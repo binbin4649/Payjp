@@ -21,6 +21,7 @@ use PAYJPV2\Model\CustomerCreateRequest;
 use PAYJPV2\Model\CustomerCreation;
 use PAYJPV2\Model\LineItemRequest;
 use PAYJPV2\Model\PaymentFlowCreateRequest;
+use PAYJPV2\Model\PaymentFlowDataRequest;
 use PAYJPV2\Model\PaymentMethodTypes;
 use PAYJPV2\Model\PriceDataRequest;
 use PAYJPV2\Model\ProductDataRequest;
@@ -56,7 +57,7 @@ class PayjpApiService
     /**
      * Checkout Session を作成し、リダイレクト URL とセッション ID を返す。
      *
-     * @param array<string, mixed> $params mode(setup|payment) / amount / success_url / cancel_url / customer_id / customer_email / user_id / payment_method_types 等。
+     * @param array<string, mixed> $params mode(setup|payment) / amount / success_url / cancel_url / customer_id / customer_email / user_id / idempotency_key / payment_method_types 等。
      * @return array{id: string, url: string}|false
      */
     public function createCheckoutSession(array $params): array|false
@@ -105,6 +106,18 @@ class PayjpApiService
                     ->setQuantity(1);
                 $request->setLineItems([$lineItem]);
                 $request->setCurrency(Currency::JPY);
+
+                // payment_flow.succeeded webhook で pending charge を引けるよう相関キーを Flow に引き継ぐ
+                $flowMeta = [];
+                if (!empty($params['idempotency_key'])) {
+                    $flowMeta['idempotency_key'] = (string)$params['idempotency_key'];
+                }
+                if (isset($params['user_id'])) {
+                    $flowMeta['user_id'] = (string)$params['user_id'];
+                }
+                if ($flowMeta !== []) {
+                    $request->setPaymentFlowData((new PaymentFlowDataRequest())->setMetadata($flowMeta));
+                }
             }
 
             $api = new CheckoutSessionsApi(null, $this->config());
@@ -248,6 +261,7 @@ class PayjpApiService
                 }
             } else {
                 // PaymentFlow 等は event の object をそのまま最小正規化する。
+                // PaymentFlow には checkout_session_id が無いため、metadata.idempotency_key 等で自社 charge を引く。
                 $metadata = (array)($object['metadata'] ?? []);
                 $data = [
                     'id' => $objectId,
@@ -260,7 +274,13 @@ class PayjpApiService
                     'card_deadline' => $object['card_deadline'] ?? null,
                     'failure_code' => $object['failure_code'] ?? null,
                     'user_id' => $metadata['user_id'] ?? null,
+                    'metadata' => $metadata,
+                    'idempotency_key' => $metadata['idempotency_key'] ?? null,
                 ];
+                $checkoutSessionId = $object['checkout_session_id'] ?? ($metadata['checkout_session_id'] ?? null);
+                if (is_string($checkoutSessionId) && str_starts_with($checkoutSessionId, 'cs_')) {
+                    $data['checkout_session_id'] = $checkoutSessionId;
+                }
             }
 
             return ['type' => $type, 'data' => $data];
