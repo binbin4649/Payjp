@@ -18,7 +18,7 @@ class PayjpUserTest extends TestCase
     public function testStatusConstant_matchesSpec(): void
     {
         $expected = [
-            'active' => '正常稼働',
+            'active' => '登録済み',
             'suspended' => 'リトライ待ち',
             'inactive' => '停止',
             'failure' => '失敗',

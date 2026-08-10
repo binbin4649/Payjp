@@ -1250,6 +1250,7 @@ class PayjpServiceTest extends TestCase
     public function testNotifyCardDeadline_backfillsNullDeadlineFromApi(): void
     {
         // user 1: active+pm だが card_deadline NULL（既存レコード相当）→ PAY.JP から補完して送信対象に含める
+        $this->setCardDeadline(1, null);
         $api = $this->apiSuccess();
         $api->method('cardDeadline')->with('pm_test_1')->willReturn(Date::today()->lastOfMonth());
         $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
@@ -1270,6 +1271,7 @@ class PayjpServiceTest extends TestCase
     public function testNotifyCardDeadline_backfillApiReturnsNull_skipsRow(): void
     {
         // 補完失敗（API エラー・exp 未設定）は NULL のまま → 通知対象外のまま続行
+        $this->setCardDeadline(1, null);
         $api = $this->apiSuccess();
         $api->method('cardDeadline')->willReturn(null);
         $messages = $this->getMockForModel('Member.Messages', ['sendMailRightNow']);
