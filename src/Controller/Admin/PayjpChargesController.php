@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Payjp\Controller\Admin;
 
-
 use Payjp\Model\Entity\PayjpCharge;
 use Cake\ORM\TableRegistry;
-use Cake\Event\EventInterface;
 
 /**
  * PayjpCharges Controller
@@ -28,14 +26,7 @@ class PayjpChargesController extends AppController
     {
         parent::initialize();
         $this->changeLogTable = TableRegistry::getTableLocator()->get('Member.ChangeLogs');
-        //$this->Authentication->allowUnauthenticated(['login']);
     }
-
-    public function beforeFilter(EventInterface $event)
-    {
-        parent::beforeFilter($event);
-    }
-
 
     /**
      * Index method
@@ -46,19 +37,11 @@ class PayjpChargesController extends AppController
     {
         $this->set('title', 'payjpCharges一覧');
         $this->Authorization->skipAuthorization();
-        $keyword = $id = '';
-        $query = $this->PayjpCharges->find()
+        $params = $this->Mem->cleaningParams($this->request->getQuery());
+        $keyword = $params['keyword'] ?? '';
+        $id = $params['id'] ?? '';
+        $query = $this->PayjpCharges->find('search', keyword: (string)$keyword, id: (string)$id)
             ->contain(['Users', 'PointBooks']);
-        $queryParams = $this->Mem->cleaningParams($this->request->getQuery());
-        extract($queryParams);
-        if (!empty($keyword)) {
-            $query->where([
-                'OR' => [
-                    'PayjpCharges.name LIKE' => '%' . $keyword . '%',
-                ]
-            ]);
-        }
-        if (!empty($id)) $query->where(['PayjpCharges.id' => $id]);
         $payjpCharges = $this->paginate($query);
         $payjpCharge = $this->PayjpCharges->newEmptyEntity();
         $Identity = $this->Authentication->getIdentity();

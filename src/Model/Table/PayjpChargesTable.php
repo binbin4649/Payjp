@@ -162,6 +162,43 @@ class PayjpChargesTable extends AppTable
     }
 
     /**
+     * 管理画面の一覧検索。id と keyword（部分一致）で絞り込む。
+     *
+     * **検索対象は実在カラムのみ。** `payjp_charges` に `name` カラムは無いため、
+     * AdminBake のひな型の `Model.name LIKE` をそのまま残すと実行時に SQL エラーになる。
+     * 対象: PAY.JP の各種コード（cus_ / cs_ / pf_）・カード下4桁・ユーザー名。
+     *
+     * `Users.name` を条件に使うので contain をこのファインダー内で行う
+     * （呼び出し側の contain に依存させない）。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param string $keyword 部分一致キーワード。空なら絞り込まない。
+     * @param string $id ID の完全一致。空なら絞り込まない。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findSearch(SelectQuery $query, string $keyword = '', string $id = ''): SelectQuery
+    {
+        $query->contain(['Users']);
+        if ($keyword !== '') {
+            $like = '%' . $keyword . '%';
+            $query->where([
+                'OR' => [
+                    'PayjpCharges.payjp_customer_code LIKE' => $like,
+                    'PayjpCharges.payjp_checkout_session_code LIKE' => $like,
+                    'PayjpCharges.payjp_payment_flow_code LIKE' => $like,
+                    'PayjpCharges.card_last4 LIKE' => $like,
+                    'Users.name LIKE' => $like,
+                ],
+            ]);
+        }
+        if ($id !== '') {
+            $query->where(['PayjpCharges.id' => $id]);
+        }
+
+        return $query;
+    }
+
+    /**
      * ユーザーの決済履歴を新しい順に取得するファインダー。
      *
      * @param \Cake\ORM\Query\SelectQuery $query Query.

@@ -220,4 +220,62 @@ class PayjpChargesTableTest extends TestCase
         $results = $this->PayjpCharges->find('byIdempotencyKey', idempotencyKey: 'idem_missing')->toArray();
         $this->assertSame([], $results);
     }
+    // ---- findSearch（管理画面の一覧検索） ----
+
+    /**
+     * キーワード検索が SQL エラーにならないこと。
+     *
+     * ひな型の `PayjpCharges.name LIKE` が残っており、payjp_charges に name カラムが
+     * 無いため管理画面が 500 になっていた（回帰防止）。
+     */
+    public function testFindSearchDoesNotReferenceMissingColumn(): void
+    {
+        $this->assertIsInt($this->PayjpCharges->find('search', keyword: 'anything')->count());
+    }
+
+    public function testFindSearchByCustomerCode(): void
+    {
+        $ids = $this->PayjpCharges->find('search', keyword: 'cus_test_2')->all()->extract('id')->toList();
+
+        $this->assertNotEmpty($ids);
+        foreach ($ids as $id) {
+            $this->assertSame('cus_test_2', $this->PayjpCharges->get($id)->payjp_customer_code);
+        }
+    }
+
+    public function testFindSearchByCardLast4(): void
+    {
+        $ids = $this->PayjpCharges->find('search', keyword: '4242')->all()->extract('id')->toList();
+
+        $this->assertNotEmpty($ids, 'カード下4桁で引ける');
+    }
+
+    /**
+     * 関連ユーザーの名前でも引ける（Users を JOIN している担保）。
+     */
+    public function testFindSearchByUserName(): void
+    {
+        $user = $this->getTableLocator()->get('Payjp.Users')->find()->firstOrFail();
+
+        $ids = $this->PayjpCharges->find('search', keyword: $user->name)->all()->extract('id')->toList();
+
+        $this->assertNotEmpty($ids);
+    }
+
+    public function testFindSearchWithoutKeywordReturnsAll(): void
+    {
+        $all = $this->PayjpCharges->find()->count();
+
+        $this->assertSame($all, $this->PayjpCharges->find('search')->count());
+    }
+
+    public function testFindSearchWithNoMatchReturnsZero(): void
+    {
+        $this->assertSame(0, $this->PayjpCharges->find('search', keyword: 'zzz-not-found')->count());
+    }
+
+    public function testFindSearchById(): void
+    {
+        $this->assertSame(1, $this->PayjpCharges->find('search', id: '1')->count());
+    }
 }

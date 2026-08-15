@@ -105,4 +105,40 @@ class PayjpChargesControllerTest extends TestCase
         $this->get('/payjp/admin/payjp-charges/view/9999');
         $this->assertResponseCode(404);
     }
+    /**
+     * キーワード検索が動くこと。
+     *
+     * 検索対象カラムが実テーブルに存在しないと SQL エラーで 500 になる
+     * （実際にひな型の `Model.name LIKE` が残っていた）。
+     */
+    public function testIndex_keywordSearch(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->get('/payjp/admin/payjp-charges?q=abc');
+
+        $this->assertResponseOk();
+    }
+
+    public function testIndex_keywordSearchWithNoMatch(): void
+    {
+        $this->loginAsAdmin();
+
+        $this->get('/payjp/admin/payjp-charges?q=zzz-not-found');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * `?query=` はクエリ組み立て用のローカル変数と同名だが、上書きできてはならない。
+     *
+     * `extract($queryParams)` は `cleaningParams()` の戻り値（キーのホワイトリスト無し）を
+     * ローカル変数に展開するため、`$query`（SelectQuery）が文字列に潰れて 500 になっていた。
+     */
+    public function testIndex_queryParamDoesNotOverwriteQueryObject(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-charges?query=x');
+        $this->assertResponseOk();
+    }
 }

@@ -136,6 +136,43 @@ class PayjpUsersTable extends AppTable
     }
 
     /**
+     * 管理画面の一覧検索。id と keyword（部分一致）で絞り込む。
+     *
+     * **検索対象は実在カラムのみ。** `payjp_users` に `name` カラムは無いため、
+     * AdminBake のひな型の `Model.name LIKE` をそのまま残すと実行時に SQL エラーになる。
+     * 対象: PAY.JP の顧客ID（cus_）・PaymentMethod（pm_）・カードブランド / 下4桁・ユーザー名。
+     *
+     * `Users.name` を条件に使うので contain をこのファインダー内で行う
+     * （呼び出し側の contain に依存させない）。
+     *
+     * @param \Cake\ORM\Query\SelectQuery $query Query.
+     * @param string $keyword 部分一致キーワード。空なら絞り込まない。
+     * @param string $id ID の完全一致。空なら絞り込まない。
+     * @return \Cake\ORM\Query\SelectQuery
+     */
+    public function findSearch(SelectQuery $query, string $keyword = '', string $id = ''): SelectQuery
+    {
+        $query->contain(['Users']);
+        if ($keyword !== '') {
+            $like = '%' . $keyword . '%';
+            $query->where([
+                'OR' => [
+                    'PayjpUsers.payjp_customer_code LIKE' => $like,
+                    'PayjpUsers.payjp_payment_method_code LIKE' => $like,
+                    'PayjpUsers.card_brand LIKE' => $like,
+                    'PayjpUsers.card_last4 LIKE' => $like,
+                    'Users.name LIKE' => $like,
+                ],
+            ]);
+        }
+        if ($id !== '') {
+            $query->where(['PayjpUsers.id' => $id]);
+        }
+
+        return $query;
+    }
+
+    /**
      * ユーザーの PAY.JP 顧客一覧を取得するファインダー。
      *
      * @param \Cake\ORM\Query\SelectQuery $query Query.
