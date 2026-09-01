@@ -139,4 +139,27 @@ class PayjpUsersControllerTest extends TestCase
         $this->get('/payjp/admin/payjp-users?query=x');
         $this->assertResponseOk();
     }
+
+    /**
+     * add 画面にステータスの選択肢が渡ること。
+     *
+     * テンプレートは `Form->control('status', ['options' => $statuses])` で使うが、
+     * Controller が set しておらず `options => null`（＝選択肢が空）になっていた。
+     * add / edit は元々テストが 1 件も無く、この不具合を素通りさせていた。
+     */
+    public function testAddSetsStatuses(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users/add');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('statuses'), 'ステータスの選択肢が渡っていない');
+    }
+
+    public function testEditSetsStatuses(): void
+    {
+        $this->loginAsAdmin();
+        $this->get('/payjp/admin/payjp-users/edit/1');
+        $this->assertResponseOk();
+        $this->assertNotNull($this->viewVariable('statuses'), 'ステータスの選択肢が渡っていない');
+    }
 }

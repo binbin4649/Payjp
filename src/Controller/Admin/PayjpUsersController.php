@@ -15,7 +15,7 @@ use Cake\ORM\TableRegistry;
  */
 class PayjpUsersController extends AppController
 {
-    protected $changeLogTable;
+    protected \Member\Model\Table\ChangeLogsTable $changeLogTable;
 
     /**
      * Initialize controller
@@ -89,6 +89,7 @@ class PayjpUsersController extends AppController
         }
         $users = $this->PayjpUsers->Users->find('list', limit: 200)->all();
         $this->set(compact('payjpUser', 'users'));
+        $this->set('statuses', PayjpUser::STATUS);
     }
 
     /**
@@ -116,6 +117,7 @@ class PayjpUsersController extends AppController
         }
         $users = $this->PayjpUsers->Users->find('list', limit: 200)->all();
         $this->set(compact('payjpUser', 'users'));
+        $this->set('statuses', PayjpUser::STATUS);
     }
 
     /**
