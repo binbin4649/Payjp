@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Payjp\Test\TestCase\Service;
 
+use Cake\TestSuite\LogTestTrait;
 use Cake\TestSuite\TestCase;
 use Cake\Core\Configure;
 use Cake\I18n\Date;
@@ -32,6 +33,8 @@ use RuntimeException;
 #[AllowMockObjectsWithoutExpectations]
 class PayjpServiceTest extends TestCase
 {
+    use LogTestTrait;
+
     protected array $fixtures = [
         'plugin.Payjp.PayjpUsers',
         'plugin.Payjp.PayjpCharges',
@@ -1453,5 +1456,37 @@ class PayjpServiceTest extends TestCase
         $this->assertNotEmpty($charge->idempotency_key);
         // UUID 形式（ハイフン区切り）を想定
         $this->assertMatchesRegularExpression('/[0-9a-f-]{16,}/i', $charge->idempotency_key);
+    }
+
+    /**
+     * 決済の通信例外は payjp_charges にも残るが、監視対象は error.log。
+     *
+     * 従来は DB にしか痕跡が無く、ログだけを見ていると失敗に気付けなかった。
+     */
+    public function testChargeAuto_exceptionIsLogged(): void
+    {
+        $this->setupLog(['error' => ['className' => 'Array']]);
+        $api = $this->createMock(PayjpApiService::class);
+        $api->method('createPaymentFlow')->willThrowException(new RuntimeException('network error'));
+
+        $this->assertFalse((new PayjpService($api))->chargeAuto(1));
+
+        $this->assertLogMessageContains(
+            'error',
+            'PayjpService::chargeAuto payment flow failed: user_id=1',
+        );
+        // 従来どおり DB にも記録される
+        $this->assertSame('failure', $this->payjpUsers()->get(1)->status);
+    }
+
+    public function testDeleteCustomer_exceptionIsLogged(): void
+    {
+        $this->setupLog(['error' => ['className' => 'Array']]);
+        $api = $this->createMock(PayjpApiService::class);
+        $api->method('deleteCustomer')->willThrowException(new RuntimeException('api error'));
+
+        $this->assertFalse((new PayjpService($api))->deleteCustomer(1));
+
+        $this->assertLogMessageContains('error', 'PayjpService::deleteCustomer failed: user_id=1');
     }
 }

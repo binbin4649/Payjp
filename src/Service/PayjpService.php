@@ -218,6 +218,11 @@ class PayjpService
             );
         } catch (Throwable $e) {
             // 通信・処理例外 → status=failure
+            // payjp_charges には残るが、監視対象は error.log なので両方に記録する
+            Log::error(
+                'PayjpService::chargeAuto payment flow failed:'
+                . ' user_id=' . $userId . ' amount=' . $amount . ' ' . $e->getMessage(),
+            );
             $this->recordFailureCharge($user, $amount, $key, null, $e->getMessage());
             $user->status = 'failure';
             $user->log = $e->getMessage();
@@ -317,6 +322,12 @@ class PayjpService
         try {
             $deleted = $this->api->deleteCustomer((string)$user->payjp_customer_code);
         } catch (Throwable $e) {
+            // PAY.JP 側に顧客が残る可能性がある。退会処理の失敗として必ず記録する
+            Log::error(
+                'PayjpService::deleteCustomer failed:'
+                . ' user_id=' . $userId . ' customer_code=' . $user->payjp_customer_code
+                . ' ' . $e->getMessage(),
+            );
             $user->status = 'failure';
             $user->log = $e->getMessage();
             $this->payjpUsers->save($user);
@@ -896,7 +907,10 @@ class PayjpService
     {
         try {
             $user = TableRegistry::getTableLocator()->get('Member.Users')->get($userId);
-        } catch (Throwable $e) {
+        } catch (Throwable) {
+            // 宛先が解決できず通知メールが送られない
+            Log::warning('PayjpService::userEmail user not found: user_id=' . $userId);
+
             return null;
         }
         $email = trim((string)($user->email ?? ''));

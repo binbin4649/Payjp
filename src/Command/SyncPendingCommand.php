@@ -7,6 +7,7 @@ namespace Payjp\Command;
 use Cake\Command\Command;
 use Cake\Console\Arguments;
 use Cake\Console\ConsoleIo;
+use Cake\Log\Log;
 use Cake\Console\ConsoleOptionParser;
 use Payjp\Service\PayjpService;
 use Throwable;
@@ -44,8 +45,27 @@ class SyncPendingCommand extends Command
             $result = $this->service->syncPendingCheckouts($hours);
             $io->success("照合 {$result['checked']} 件 / 確定 {$result['confirmed']} 件 / 失敗 {$result['failed']} 件");
 
-            return $result['failed'] > 0 ? self::CODE_ERROR : self::CODE_SUCCESS;
+            if ($result['failed'] > 0) {
+                Log::error(
+                    'SyncPendingCommand::execute completed with failures:'
+                    . ' hours=' . $hours
+                    . ' checked=' . $result['checked']
+                    . ' confirmed=' . $result['confirmed']
+                    . ' failed=' . $result['failed'],
+                );
+
+                return self::CODE_ERROR;
+            }
+            Log::info(
+                'SyncPendingCommand::execute done:'
+                . ' hours=' . $hours
+                . ' checked=' . $result['checked']
+                . ' confirmed=' . $result['confirmed'],
+            );
+
+            return self::CODE_SUCCESS;
         } catch (Throwable $e) {
+            Log::error('SyncPendingCommand::execute failed: hours=' . ($hours ?? '') . ' ' . $e->getMessage());
             $io->error('SyncPendingCommand failed: ' . $e->getMessage());
 
             return self::CODE_ERROR;
