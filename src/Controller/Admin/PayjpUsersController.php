@@ -40,13 +40,15 @@ class PayjpUsersController extends AppController
         $params = $this->Mem->cleaningParams($this->request->getQuery());
         $keyword = $params['keyword'] ?? '';
         $id = $params['id'] ?? '';
-        $query = $this->PayjpUsers->find('search', keyword: (string)$keyword, id: (string)$id)
+        $user_id = $params['user_id'] ?? '';
+        $status = $params['status'] ?? '';
+        $query = $this->PayjpUsers->find('search', keyword: (string)$keyword, id: (string)$id, user_id: (string)$user_id, status: (string)$status)
             ->contain(['Users']);
-        $payjpUsers = $this->paginate($query);
+        $payjpUsers = $this->paginate($query, ['limit' => 100, 'order' => ['PayjpUsers.created' => 'DESC']]);
         $payjpUser = $this->PayjpUsers->newEmptyEntity();
         $Identity = $this->Authentication->getIdentity();
-
-        $this->set(compact('payjpUsers', 'payjpUser', 'Identity', 'keyword', 'id'));
+        $this->set(compact('payjpUsers', 'payjpUser', 'Identity', 'keyword', 'id', 'user_id', 'status'));
+        $this->set('statuses', PayjpUser::STATUS);
     }
 
     /**
@@ -64,6 +66,7 @@ class PayjpUsersController extends AppController
         $this->Authorization->authorize($payjpUser, 'view');
         $changeLogs = $this->changeLogTable->find('latest', model_name: 'PayjpUsers', record_id: $id);
         $this->set(compact('payjpUser', 'changeLogs', 'Identity'));
+        $this->set('statuses', PayjpUser::STATUS);
     }
 
     /**
