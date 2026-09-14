@@ -14,23 +14,9 @@
     </div>
     <section class="row mx-1 my-1">
         <div class="col-6">
-            <?= $this->Html->link('一覧に戻る', '/admin/payjpcharges', ['class' => 'btn btn-outline-secondary']) ?>
+            <?= $this->Html->link('一覧に戻る', '/payjp/admin/payjp-charges', ['class' => 'btn btn-outline-secondary']) ?>
         </div>
         <div class="col-6">
-            <?php if ($Identity->can('delete', $payjpCharge)) : ?>
-                <?= $this->Form->postLink(
-                    '削除',
-                    ['prefix' => 'Admin', 'controller' => 'PayjpCharges', 'action' => 'delete', $payjpCharge->id],
-                    [
-                        'confirm' => '通常はステータスを「無効」で運用して下さい。それでも削除しますか？',
-                        'class' => 'btn btn-sm btn-secondary me-3',
-                        'method' => 'delete'
-                    ]
-                ) ?>
-            <?php endif; ?>
-            <?php if ($Identity->can('edit', $payjpCharge)) : ?>
-                <?= $this->Html->link('編集', ['action' => 'edit', $payjpCharge->id], ['class' => 'btn btn-primary me-3']) ?>
-            <?php endif; ?>
         </div>
     </section>
 
@@ -43,8 +29,14 @@
                         <span class="me-2">modified:<?= $payjpCharge->modified ?></span>
                         <span class="me-2">created:<?= $payjpCharge->created ?></span>
                     </li>
-                    <li class="list-group-item"><span class="text-muted me-2">user_id:</span><?= h($payjpCharge->user_id) ?></li>
-                    <li class="list-group-item"><span class="text-muted me-2">point_book_id:</span><?= h($payjpCharge->point_book_id) ?></li>
+                    <li class="list-group-item">
+                        <span class="text-muted me-2">user_id:</span>
+                        <?= $this->Mem->adminLink($payjpCharge->user->name, 'Users', $payjpCharge->user->id) ?>
+                    </li>
+                    <li class="list-group-item">
+                        <span class="text-muted me-2">point_book_id:</span>
+                        <?= $payjpCharge->hasValue('point_book') ? $this->Html->link($payjpCharge->point_book->id, ['plugin' => 'Point', 'prefix' => 'Admin', 'controller' => 'PointBooks', 'action' => 'view', $payjpCharge->point_book->id]) : '' ?>
+                    </li>
                     <li class="list-group-item"><span class="text-muted me-2">ステータス:</span><?= $this->Mem->statusBadge($payjpCharge->status) ?></li>
                     <li class="list-group-item"><span class="text-muted me-2">type:</span><?= h($payjpCharge->type) ?></li>
                     <li class="list-group-item"><span class="text-muted me-2">payjp_status:</span><?= h($payjpCharge->payjp_status) ?></li>

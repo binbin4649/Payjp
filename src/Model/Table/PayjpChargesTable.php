@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace Payjp\Model\Table;
@@ -176,7 +177,7 @@ class PayjpChargesTable extends AppTable
      * @param string $id ID の完全一致。空なら絞り込まない。
      * @return \Cake\ORM\Query\SelectQuery
      */
-    public function findSearch(SelectQuery $query, string $keyword = '', string $id = ''): SelectQuery
+    public function findSearch(SelectQuery $query, string $keyword = '', string $id = '', string $userId = ''): SelectQuery
     {
         $query->contain(['Users']);
         if ($keyword !== '') {
@@ -194,7 +195,9 @@ class PayjpChargesTable extends AppTable
         if ($id !== '') {
             $query->where(['PayjpCharges.id' => $id]);
         }
-
+        if ($userId !== '') {
+            $query->where(['PayjpCharges.user_id' => $userId]);
+        }
         return $query;
     }
 
